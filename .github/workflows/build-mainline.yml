@@ -1,6 +1,9 @@
 name: Build mainline-oriented NX563J kernel
 
 on:
+  push:
+    paths:
+      - ".github/workflows/build-mainline.yml"
   workflow_dispatch:
     inputs:
       source_ref:

@@ -1,6 +1,9 @@
 name: Build downstream NX563J kernel
 
 on:
+  push:
+    paths:
+      - ".github/workflows/build-downstream.yml"
   workflow_dispatch:
     inputs:
       kernel_ref:
