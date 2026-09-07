@@ -315,3 +315,40 @@ Lessons recorded:
   accounting reflects that. 29.7 GiB free is plenty; revisit if the rootfs
   is ever recreated (zero the first sectors or use `mke2fs -E lazy_itable_init=0`
   and discard first).
+
+## 2026-09-08 display bring-up (JDI R63452 cmd-mode panel)
+
+**Linux now draws on the NX563J screen.** Recipe (all proven on device):
+
+1. Panel: `qcom,mdss_dsi_jdi_r63452_1080p_5p5_cmd`, fb0 = `mdssfb_90000`,
+   1080x1920 @ 32bpp, virtual height 3840 (double buffer), stride 4352,
+   smem 16,711,680 bytes.
+2. **Keep /dev/fb0 open.** With no fb client, mdss re-suspends the panel
+   within ~1 s of unblank (`panel_status=suspend`). A long-lived holder
+   process keeps it `alive`.
+3. **The write() path is broken**: `dd of=/dev/fb0` fails with ENODEV
+   ("No such device") even with the panel alive. Use mmap + draw +
+   `FBIOPAN_DISPLAY` (tools/fbtest/fbtest.c).
+4. **Backlight defaults to OFF.** `panel_status=alive` only means the fb
+   layer is unblanked — the panel power-on sequence never re-runs (the one
+   and only `incell_lcd_power_off` happens at final suspend; there is no
+   matching power-on message after the splash handoff). The frame was being
+   committed to the panel all along; the screen was simply unlit. Fix:
+   write `/sys/class/leds/lcd-backlight/brightness` (and/or
+   `/sys/class/leds/wled/brightness`, max 4095) while the panel is alive.
+5. `msm_cmd_autorefresh_en=1` was set in the winning configuration
+   (necessity not isolated; harmless).
+6. `INFO: task mdss_dsi_event blocked for more than 120 seconds` reports
+   are **benign**: dsi_event_thread idles in an uninterruptible
+   `wait_event()` (`dsi_event_thread+0xc8`), which the hung-task watchdog
+   flags by design. Not a wedge.
+
+Boot-persistent: `/root/rc.boot` in the rootfs (reference copy:
+`initramfs/rc.boot.rootfs`) starts dropbear, enables autorefresh, launches
+`fbtest 999999` as the fb holder (draws red/green/blue/white bands as a
+boot-success splash), and lights the backlight.
+
+Operational footgun: `pkill -f "fbtest ..."` inside an ssh remote command
+matches the sshd-spawned shell's own cmdline and kills the session (and
+the newly started replacement). Use exact pgrep/pkill patterns or kill by
+pid.

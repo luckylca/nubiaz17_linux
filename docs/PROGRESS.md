@@ -61,7 +61,7 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 
 1. Keep the rootfs-booting diag image in `boot` while developing (restore baseline `boot` only when stock Android is needed).
 2. Harden the Alpine rootfs as a server: package set, services in `/root/rc.boot` (or migrate to OpenRC/switch_root), storage layout for data.
-3. Bring up display (JDI R63452) and touch (Synaptics RMI4).
+3. Replace the fbtest color-band holder with a real status dashboard (fb text rendering: IP, uptime, SSH state), then bring up touch (Synaptics RMI4 — driver probes but logged spontaneous resets + I2C errors during panel suspend; retest while display is alive).
 
 ## Next software actions
 
@@ -70,6 +70,15 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 - Investigate display bring-up (JDI R63452 panel via downstream mdss, or simple-framebuffer) and Synaptics RMI4 touch.
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
+
+## 2026-09-08 display works: Linux draws on the JDI R63452 panel
+
+**The screen shows Linux-drawn content (red/green/blue/white bands) at boot — user-confirmed.**
+
+- Working recipe: hold `/dev/fb0` open (else mdss re-suspends in ~1 s) → unblank → mmap + draw + `FBIOPAN_DISPLAY` (the `write()` path is broken, ENODEV) → light the backlight (`lcd-backlight` + `wled`) → enable `msm_cmd_autorefresh_en`. Full analysis in `docs/RESEARCH.md`.
+- `tools/fbtest/fbtest.c` (built on-device with the newly installed gcc 13.2.1 toolchain, installed via offline apk) runs at boot as `fbtest 999999` from `/root/rc.boot` — doubling as a boot-success splash and the fb holder that keeps the panel alive.
+- On-device aarch64 toolchain: gcc 13.2.1 + binutils + make + musl-dev + linux-headers, installed offline from pinned Alpine v3.20 apks (dependency closure resolved on the Mac, 16+1 packages).
+- Key insight: `panel_status=alive` ≠ panel lit — the frame was reaching the panel from the first fbtest run; the backlight was simply off (WLED defaults to 0 and the panel power-on sequence never re-runs after the splash handoff).
 
 ## 2026-09-08 persistent Linux rootfs with SSH at boot
 
