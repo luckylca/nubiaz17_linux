@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-07
 
-> **Current authoritative status:** the live inventory, backups, both kernel CI paths, and signed boot repacking are already complete. Any older "current blocker" or "next action" text further down that says these are still pending is superseded by this section.
+> **Current authoritative status:** the live inventory, backups, both kernel CI paths, and signed boot repacking are already complete. The "Current blocker" and "Next actions" sections below reflect the remaining device-side work.
 
 ## Current authoritative status
 
@@ -15,7 +15,7 @@ Last updated: 2026-09-07
 - Repacking that deterministic kernel twice produced the same SHA-256 `fc54ae2e...bf2a87`; both images have valid Android `/boot` signatures, exact CI kernels and the unchanged baseline Android ramdisk.
 - The earlier smoke image SHA-256 `75b02e992020d501ae51c03791c4fdbd68958211626666c57aeb4cbe849305c4` is retained only as a historical pre-deterministic build and is superseded by the `fc54ae2e...` candidate.
 - No device partition write, unlock, or flash has been performed.
-- The phone is currently absent from ADB/fastboot, so the next device milestone is a read-only fastboot-state inspection followed, if accepted, by non-writing `fastboot boot <signed-image>`.
+- The phone is currently reachable over ADB again (serial `392a99df`); the next device milestone is a read-only fastboot-state inspection followed, if accepted, by non-writing `fastboot boot <signed-image>`.
 - CI now pins exact kernel source revisions and records resolved source commits in new artifacts: downstream `cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6`, 6.0-oriented bridge `a07b78d3526376cfb8ef136bd0fa279163ac5e3f`.
 
 ## Fixed target
@@ -51,36 +51,20 @@ Not first-stage blockers: camera, calls, VoLTE, full Android hardware parity.
 
 ## Current blocker
 
-The Mac has a working Android platform-tools install:
-
-`/Users/lucky/Library/Android/sdk/platform-tools/adb`
-
-but the phone is currently not enumerating as an Android/Qualcomm USB device:
-
-- `adb devices -l`: no device
-- `fastboot devices -l`: no device
-- macOS USB inventory: no Nubia / NX563J / Android / Qualcomm match
-
-This is below the ADB authorization layer; the USB device itself is not presently visible to macOS.
+None on the software side: both kernel CI paths are bit-for-bit reproducible and the deterministic signed smoke boot candidate is ready. The remaining gating work is device-side: confirm the real bootloader state over read-only fastboot, then test `fastboot boot` with the signed smoke image.
 
 ## Next device-side actions
 
-Once USB enumeration appears:
-
-1. run `scripts/device_probe.sh`;
-2. record serial/model/build/bootloader state;
-3. dump the exact by-name partition map;
-4. identify boot/recovery/system/vendor/userdata layout;
-5. capture original boot and recovery images where permissions allow;
-6. hash all captured images;
-7. determine whether temporary `fastboot boot` is accepted.
+1. Reboot the phone into fastboot mode.
+2. Run `scripts/fastboot_readonly_probe.sh` and archive output under `artifacts/fastboot-probe-<date>/`.
+3. Determine `secure` / `unlocked` / `partition-size:boot` / `max-download-size` from the probe, not from Android properties.
+4. If the bootloader accepts non-writing temporary boot, run `fastboot boot` with the deterministic signed smoke image (`fc54ae2e...bf2a87`).
 
 ## Next software actions
 
-- Make downstream CI compile `Image.gz-dtb` reproducibly.
-- Make mainline-oriented CI compile the existing NX563J DTS branch.
-- Add boot image unpack/repack tooling after an original boot image is captured.
-- Add rootfs generation only after storage/boot strategy is fixed from the real device.
+- Build a minimal diagnostic initramfs (busybox `/init`, devtmpfs, block/USB-gadget diagnostics) as the first Linux userspace.
+- Establish a screen-independent diagnostic channel, prioritizing USB gadget serial/network over UART and pstore.
+- Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
 ## 2026-09-07 live device inventory
@@ -123,23 +107,9 @@ All three are exactly 67,108,864 bytes and start with the Android boot image mag
 
 ## CI status
 
-### Mainline-oriented
+Both GitHub Actions kernel paths are complete and bit-for-bit reproducible; see `docs/RESEARCH.md` for the full run IDs and output hashes:
 
-GitHub Actions run `34084661436` completed successfully.
+- LineageOS downstream 4.4.302: runs `34096169657` / `34098047268`, `Image.gz-dtb` SHA-256 `e9f330df...c405484c7a4f`.
+- NX563J 6.0-oriented bridge: runs `34096169661` / `34098047345`, `Image.gz` SHA-256 `e5bf0e73...13510b4002f`.
 
-It successfully:
-
-1. cloned `LemonFan-maker/MSM8998-OH-KERNEL-6.0`;
-2. configured `nx563j_oh_defconfig`;
-3. built the kernel and DTBs;
-4. uploaded the `nx563j-mainline-oriented` artifact.
-
-This proves the existing NX563J 6.0-oriented tree is reproducibly buildable in our repository CI.
-
-### Downstream 4.4.302
-
-The first CI attempt exposed obsolete CI/toolchain URLs and empty workflow inputs on push; both were fixed.
-
-The second attempt reached the real kernel build. It failed while linking the AArch32 vDSO because Clang selected the host x86 `/usr/bin/ld` for `armelf_linux_eabi`.
-
-A third CI attempt now explicitly points the compat Clang target/linker search at the Android ARM32 binutils. This is the current downstream build under validation.
+The deterministic signed kernel-only smoke image (`fc54ae2e...bf2a87`) is the current on-device test candidate.
