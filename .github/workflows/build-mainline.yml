@@ -19,6 +19,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    # Reproducibility rerun marker: kernel inputs below are intentionally stable.
     env:
       SOURCE_REF: ${{ inputs.source_ref || 'a07b78d3526376cfb8ef136bd0fa279163ac5e3f' }}
       DEFCONFIG: ${{ inputs.defconfig || 'nx563j_oh_defconfig' }}
