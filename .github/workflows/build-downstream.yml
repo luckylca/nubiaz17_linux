@@ -19,6 +19,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    env:
+      KERNEL_REF: ${{ inputs.kernel_ref || 'lineage-22.2' }}
+      DEFCONFIG: ${{ inputs.defconfig || 'lineageos_nx563j_defconfig' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +34,7 @@ jobs:
       - name: Download Android toolchains
         run: |
           mkdir -p work/toolchains/clang work/toolchains/gcc64 work/toolchains/gcc32
-          wget -q             https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r450784d.tar.gz             -O work/clang.tar.gz
+          wget -q             https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android13-mainline-go-adbd-release/clang-r450784d.tar.gz             -O work/clang.tar.gz
           tar -xzf work/clang.tar.gz -C work/toolchains/clang
 
           wget -q             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz             -O work/gcc64.tar.gz
@@ -42,13 +45,13 @@ jobs:
 
       - name: Clone LineageOS kernel
         run: |
-          git clone --depth=1 --branch "${{ inputs.kernel_ref }}"             https://github.com/LineageOS/android_kernel_nubia_msm8998.git             work/kernel
+          git clone --depth=1 --branch "$KERNEL_REF"             https://github.com/LineageOS/android_kernel_nubia_msm8998.git             work/kernel
 
       - name: Configure
         working-directory: work/kernel
         run: |
           export PATH="$GITHUB_WORKSPACE/work/toolchains/clang/bin:$PATH"
-          make -j"$(nproc)" O=out ARCH=arm64             CLANG_TRIPLE=aarch64-linux-gnu-             CROSS_COMPILE="$GITHUB_WORKSPACE/work/toolchains/gcc64/bin/aarch64-linux-android-"             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CROSS_COMPILE_COMPAT="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1             "${{ inputs.defconfig }}"
+          make -j"$(nproc)" O=out ARCH=arm64             CLANG_TRIPLE=aarch64-linux-gnu-             CROSS_COMPILE="$GITHUB_WORKSPACE/work/toolchains/gcc64/bin/aarch64-linux-android-"             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CROSS_COMPILE_COMPAT="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1             "$DEFCONFIG"
 
       - name: Build
         working-directory: work/kernel
@@ -66,6 +69,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nx563j-downstream-${{ inputs.kernel_ref }}
+          name: nx563j-downstream-${{ env.KERNEL_REF }}
           path: artifacts/downstream/
           if-no-files-found: error

@@ -19,6 +19,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    env:
+      SOURCE_REF: ${{ inputs.source_ref || 'master' }}
+      DEFCONFIG: ${{ inputs.defconfig || 'nx563j_oh_defconfig' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -30,12 +33,12 @@ jobs:
 
       - name: Clone existing NX563J mainline-oriented tree
         run: |
-          git clone --depth=1 --branch "${{ inputs.source_ref }}"             https://github.com/LemonFan-maker/MSM8998-OH-KERNEL-6.0.git             work/kernel
+          git clone --depth=1 --branch "$SOURCE_REF"             https://github.com/LemonFan-maker/MSM8998-OH-KERNEL-6.0.git             work/kernel
 
       - name: Configure
         working-directory: work/kernel
         run: |
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- "${{ inputs.defconfig }}"
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
       - name: Build kernel and DTBs
         working-directory: work/kernel
