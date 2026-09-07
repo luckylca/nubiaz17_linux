@@ -55,6 +55,16 @@ jobs:
           actual_commit="$(git -C work/kernel rev-parse HEAD)"
           echo "KERNEL_COMMIT=$actual_commit" >> "$GITHUB_ENV"
           echo "Kernel source commit: $actual_commit" >> "$GITHUB_STEP_SUMMARY"
+          source_epoch="$(git -C work/kernel show -s --format=%ct HEAD)"
+          source_timestamp="$(LC_ALL=C date -u -d "@$source_epoch" '+%a %b %e %T UTC %Y')"
+          {
+            echo "SOURCE_DATE_EPOCH=$source_epoch"
+            echo "KBUILD_BUILD_TIMESTAMP=$source_timestamp"
+            echo "KBUILD_BUILD_USER=nx563j-ci"
+            echo "KBUILD_BUILD_HOST=github-actions"
+            echo "KBUILD_BUILD_VERSION=1"
+          } >> "$GITHUB_ENV"
+          echo "Reproducible Kbuild timestamp: $source_timestamp" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Apply downstream compatibility patches
         working-directory: work/kernel
