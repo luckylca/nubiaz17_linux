@@ -16,7 +16,8 @@ Last updated: 2026-09-07
 - The earlier smoke image SHA-256 `75b02e992020d501ae51c03791c4fdbd68958211626666c57aeb4cbe849305c4` is retained only as a historical pre-deterministic build and is superseded by the `fc54ae2e...` candidate.
 - No device partition write, unlock, or flash has been performed.
 - Read-only fastboot inspection is complete (2026-09-07): the bootloader is **already unlocked** (`unlocked: yes`) with secure boot still enforcing image signatures (`secure: yes`); non-A/B confirmed (all slot variables absent); `partition-size:boot = 0x4000000` (64 MiB); `max-download-size = 512 MiB`; `hw-revision = 20001`. Full output archived locally under `artifacts/fastboot-probe-2026-09-07/`.
-- `fastboot boot <image>` is **not implemented** by the NX563J Nubia bootloader: the image transfers successfully but the boot command itself fails with `FAILED (remote: 'unknown command')`. Public NX563J sources (TWRP/LineageOS docs, XDA, 4PDA) confirm this device family only supports flash-based installation. The smoke test therefore requires a (recoverable) partition write and is pending explicit user authorization.
+- `fastboot boot <image>` is **not implemented** by the NX563J Nubia bootloader: the image transfers successfully but the boot command itself fails with `FAILED (remote: 'unknown command')`. Public NX563J sources (TWRP/LineageOS docs, XDA, 4PDA) confirm this device family only supports flash-based installation.
+- A user-authorized flash of the signed smoke image to `recovery` was **rejected by the bootloader**: `Flashing is not allowed in Lock State`. `fastboot oem device-info` shows a two-tier lock: `Device unlocked: true` but `Nubia fastboot unlocked: false`. Opening the flash gate requires `fastboot oem nubia_unlock NUBIA_NX563J` (expected to factory-reset userdata) or an EDL/9008 flash path — both pending explicit user decision. No partition content was modified.
 - CI now pins exact kernel source revisions and records resolved source commits in new artifacts: downstream `cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6`, 6.0-oriented bridge `a07b78d3526376cfb8ef136bd0fa279163ac5e3f`.
 
 ## Fixed target
@@ -52,13 +53,13 @@ Not first-stage blockers: camera, calls, VoLTE, full Android hardware parity.
 
 ## Current blocker
 
-The software side is ready, but the smoke test now requires a partition write: the NX563J bootloader does not support non-writing `fastboot boot`, so the deterministic signed smoke image must be flashed to `boot` (or `recovery`) to run. Flashing is recoverable — the verified baseline images in `backups/2026-09-07-baseline/` can be restored at any time — but it requires explicit user authorization.
+The NX563J bootloader neither supports non-writing `fastboot boot` nor accepts `fastboot flash` in its current state (`Nubia fastboot unlocked: false`). Running any custom image on hardware requires either the documented `fastboot oem nubia_unlock NUBIA_NX563J` (expected userdata factory reset) or EDL/9008 flashing. This is a user decision; software-side preparation continues meanwhile.
 
 ## Next device-side actions
 
-1. Obtain user authorization to flash the deterministic signed smoke image (`fc54ae2e...bf2a87`) to the `boot` or `recovery` partition.
-2. Flash the image, boot it, and capture diagnostics (screen state, ADB reappearance, USB enumeration).
-3. Restore the matching baseline image afterwards if the test fails or the device must return to stock Android.
+1. User decides between `nubia_unlock` (wipes userdata) and the EDL path (no wipe, needs a verified MSM8998 firehose programmer).
+2. Once flashing is possible: flash the deterministic signed smoke image (`fc54ae2e...bf2a87`) to `recovery`, boot it via `adb reboot recovery`, and capture diagnostics (screen state, ADB reappearance, USB enumeration).
+3. Keep fastboot sessions short — the NX563J fastboot interface froze once after several commands and needed a power cycle.
 
 ## Next software actions
 

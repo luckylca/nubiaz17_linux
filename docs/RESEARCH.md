@@ -145,6 +145,20 @@ Sending the deterministic signed smoke image succeeded (`Sending 'boot.img' OKAY
 
 Consequence: the kernel smoke test requires flashing the signed image to `boot` (Android keeps its ramdisk in that image, so stock Android may still boot with the replacement kernel) or to `recovery` (stock Android boot path untouched; test by entering recovery via keys). Both are recoverable from the verified baseline backups but require explicit user authorization.
 
+### Two-tier lock state: flashing is still blocked
+
+A user-authorized attempt to flash the signed smoke image to `recovery` was rejected: `Writing 'recovery' FAILED (remote: 'Flashing is not allowed in Lock State')`. `fastboot oem device-info` reveals a two-tier lock model:
+
+- `Device unlocked: true` — the standard AVB-level OEM unlock has been done at some point (consistent with the `orange` verified boot state and with the Magisk-patched boot image running).
+- `Nubia fastboot unlocked: false` — Nubia's own flash gate is still closed, and it is this gate that blocks `fastboot flash`.
+- `Device critical unlocked: false`, `Verity mode: true`.
+
+The documented way to open the Nubia flash gate is `fastboot oem nubia_unlock NUBIA_NX563J` (the same command on the official TWRP page). Like other bootloader unlocks it is expected to factory-reset `userdata`, so it remains a destructive, user-authorized step. Since `unlocked: yes` at the AVB level, signature enforcement on custom boot images is already relaxed (orange state); the signed smoke image is nevertheless the safest first payload.
+
+An alternative that avoids both the unlock and the wipe is EDL (Qualcomm 9008) flashing with an MSM8998 firehose programmer — this is also the likely way the existing Magisk-patched boot was installed. It carries its own risks (wrong loader / wrong partition) and needs a verified NX563J/MSM8998 programmer.
+
+Operational note: after several fastboot commands the device's fastboot interface froze and USB enumeration dropped until a power cycle — matching XDA reports of the NX563J fastboot screen freezing. Keep fastboot sessions short and prefer batching required commands.
+
 ## Boot image format and signing
 
 The captured `boot` partition is a full 64 MiB dump, while the signed active Android boot image occupies only the beginning. The observed header-v0 geometry is: 4096-byte pages, kernel address `0x00008000`, ramdisk address `0x01000000`, legacy `second_addr=0x00f00000` even with `second_size == 0`, and tags address `0x00000100`.
