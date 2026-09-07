@@ -1,0 +1,37 @@
+diff --git a/include/linux/cleanup.h b/include/linux/cleanup.h
+index d90ce4dd..03a53c04 100644
+--- a/include/linux/cleanup.h
++++ b/include/linux/cleanup.h
+@@ -103,14 +103,18 @@ static inline class_##_name##_t class_##_name##ext##_constructor(_init_args) \
+  */
+ 
+ #define DEFINE_GUARD(_name, _type, _lock, _unlock) \
+-	DEFINE_CLASS(_name, _type, _unlock, ({ _lock; _T; }), _type _T)
++	DEFINE_CLASS(_name, _type, _unlock, ({ _lock; _T; }), _type _T); \
++	static inline void *class_##_name##_lock_ptr(class_##_name##_t *_T) \
++	{ return *_T; }
+ 
+ #define guard(_name) \
+ 	CLASS(_name, __UNIQUE_ID(guard))
+ 
++#define __guard_ptr(_name) class_##_name##_lock_ptr
++
+ #define scoped_guard(_name, args...)					\
+ 	for (CLASS(_name, scope)(args),					\
+-	     *done = NULL; !done; done = (void *)1)
++	     *done = NULL; __guard_ptr(_name)(&scope) && !done; done = (void *)1)
+ 
+ /*
+  * Additional helper macros for generating lock guards with types, either for
+@@ -140,6 +144,11 @@ typedef struct {							\
+ static inline void class_##_name##_destructor(class_##_name##_t *_T)	\
+ {									\
+ 	if (_T->lock) { _unlock; }					\
++}									\
++									\
++static inline void *class_##_name##_lock_ptr(class_##_name##_t *_T)	\
++{									\
++	return _T->lock;						\
+ }
+ 
+ 

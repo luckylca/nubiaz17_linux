@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - ".github/workflows/build-downstream.yml"
+      - "patches/downstream/**"
   workflow_dispatch:
     inputs:
       kernel_ref:
@@ -46,6 +47,11 @@ jobs:
       - name: Clone LineageOS kernel
         run: |
           git clone --depth=1 --branch "$KERNEL_REF"             https://github.com/LineageOS/android_kernel_nubia_msm8998.git             work/kernel
+
+      - name: Apply downstream compatibility patches
+        working-directory: work/kernel
+        run: |
+          git apply "$GITHUB_WORKSPACE/patches/downstream/0001-backport-scoped-guard-lock-pointer.patch"
 
       - name: Configure
         working-directory: work/kernel
