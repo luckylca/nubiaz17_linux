@@ -159,6 +159,15 @@ An alternative that avoids both the unlock and the wipe is EDL (Qualcomm 9008) f
 
 Operational note: after several fastboot commands the device's fastboot interface froze and USB enumeration dropped until a power cycle — matching XDA reports of the NX563J fastboot screen freezing. Keep fastboot sessions short and prefer batching required commands.
 
+### fastboot session behavior and the real unlock sequence (2026-09-07)
+
+Extended device work revealed a repeatable pattern:
+
+- A fastboot session answers commands only for a short window right after the bootloader (re)starts. If the device sits in fastboot for a while — or after a host-side transfer is killed mid-flight — the USB interface keeps enumerating (`fastboot devices`, `system_profiler` still see it, USB ID `18d1:d00d`) but every command hangs forever. Recovery requires the user to restart the bootloader from the on-device fastboot menu (or power-cycle) and the host must fire its commands **immediately** after re-enumeration. Cable replugs alone do not unwedge it.
+- Do not run host-side polling loops that repeatedly open the fastboot interface (`getvar` monitors) concurrently with real fastboot operations — a hung polling child holds the interface and starves the real command (`< waiting for any device >` while `fastboot devices` still lists the phone).
+- The first `fastboot oem nubia_unlock NUBIA_NX563J` attempt silently never executed (issued into a wedged session; the command hung and was killed). A later attempt in a fresh session succeeded instantly with `START update nubia fastboot unlock flag!!! / set state to 1 ok!!!`. Lesson: treat any hung fastboot command as NOT executed and re-run it in a verified-live session.
+- With the Nubia flash gate open, `fastboot flash recovery <signed smoke image>` completed normally (`Sending OKAY`, `Writing OKAY`). `fastboot reboot recovery` is accepted by this bootloader but the device booted the stock `boot` partition anyway (kernel `4.4.194`), so use `adb reboot recovery` (BCB/misc) or hardware keys to actually land on the recovery partition.
+
 ## Boot image format and signing
 
 The captured `boot` partition is a full 64 MiB dump, while the signed active Android boot image occupies only the beginning. The observed header-v0 geometry is: 4096-byte pages, kernel address `0x00008000`, ramdisk address `0x01000000`, legacy `second_addr=0x00f00000` even with `second_size == 0`, and tags address `0x00000100`.

@@ -38,6 +38,11 @@ chmod 755 root/bin/busybox
 cp "$ROOT/initramfs/init" root/init
 chmod 755 root/init
 
+# /init's shebang is /bin/sh, and the kernel resolves it before any userspace
+# runs — so the symlink must exist in the archive itself. The remaining
+# applet links are created at boot by `busybox --install -s /bin`.
+ln -sf busybox root/bin/sh
+
 # Static fallback nodes are synthesized directly into the cpio below (the
 # archive encodes device metadata; no local mknod is needed). devtmpfs or
 # mdev covers the rest at boot.

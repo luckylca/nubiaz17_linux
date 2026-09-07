@@ -108,7 +108,19 @@ A read-only baseline backup of the three bootable Android images was successfull
 
 All three are exactly 67,108,864 bytes and start with the Android boot image magic `ANDROID!`. SHA-256 checksums are stored locally in `SHA256SUMS`.
 
-## CI status
+## 2026-09-07 on-device breakthrough
+
+The replacement kernel boot question is resolved:
+
+- **The deterministic downstream 4.4.302 kernel boots on real NX563J hardware and reaches userspace.** Earlier black-screen/fastboot-fallback results were userspace problems, not kernel problems: the Android-ramdisk smoke image fails in the Android boot flow (`root=/dev/dm-0` dm-verity chain), and the first diag initramfs had a missing `/bin/sh` symlink (kernel `binfmt_script` could not start `/init` at all).
+- **A reliable screen-free diagnostic channel now exists**: the diag initramfs writes stage markers, full `dmesg`, and system listings into raw sectors of the idle `recovery2` partition (`/dev/block/sde20`, user-authorized, baseline-backed-up), readable afterwards from rooted stock Android. Stock-kernel and downstream-kernel probe runs both produced complete logs this way.
+- **USB gadget works on both kernels**: UDC `a800000.dwc3` binds; `ncm.usb0` and `mass_storage.usb0` functions instantiate; the composite device reaches `state=configured` on the host. Stock and downstream defconfigs both lack gadget serial/ACM/RNDIS/ECM and devtmpfs (fragment for a diag kernel exists in `config/downstream-usb-diag.fragment`).
+- pstore/ramoops is a dead end on this device: stock kernel reserves `persistent_ram` regions but never registers a ramoops backend (empty `dmesg` matches, empty `/sys/fs/pstore` even after deliberate `sysrq-c` panics), and the downstream DTB has no ramoops node at all.
+- `fastboot oem nubia_unlock NUBIA_NX563J` must be re-issued **every fastboot session** before flashing; the Nubia flash gate does not stay open across reboots.
+- Baseline `boot` was restored after each experiment; stock Android remains fully functional with Magisk root.
+
+Current state: network-shell diag image (downstream 4.4.302 + initramfs, usb0 `10.42.0.1`, DHCP + telnetd, log LUN, sde20 logging) flashed to `boot` and under test.
+
 
 Both GitHub Actions kernel paths are complete and bit-for-bit reproducible; see `docs/RESEARCH.md` for the full run IDs and output hashes:
 
