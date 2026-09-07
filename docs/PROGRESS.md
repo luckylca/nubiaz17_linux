@@ -65,3 +65,65 @@ Once USB enumeration appears:
 - Make mainline-oriented CI compile the existing NX563J DTS branch.
 - Add boot image unpack/repack tooling after an original boot image is captured.
 - Add rootfs generation only after storage/boot strategy is fixed from the real device.
+
+
+## 2026-09-07 live device inventory
+
+The phone is now visible over USB/ADB as Nubia NX563J / MSM8998.
+
+Observed current software state:
+
+- Android 10 (Nubia build 21.4.14)
+- running kernel: `4.4.194-perf+` (2020 build)
+- non-A/B layout (no slot suffix)
+- boot device: Qualcomm UFS controller `1da4000.ufshc`
+- current root filesystem is Android dm-verity/system-as-root based
+- Magisk root shell is available
+
+Boot security needs careful interpretation before any flashing:
+
+- `ro.boot.flash.locked=1`
+- `getprop ro.boot.verifiedbootstate` reports `green`
+- kernel cmdline contains `androidboot.verifiedbootstate=orange`
+- kernel cmdline also contains `androidboot.selinux=permissive`
+
+Do not assume the bootloader state from only one of these signals.
+
+Confirmed partition mapping and size highlights:
+
+- `boot -> /dev/block/sde18` — 64 MiB
+- `recovery -> /dev/block/sde19` — 64 MiB
+- `recovery2 -> /dev/block/sde20` — 64 MiB
+- `system -> /dev/block/sda9` — 6 GiB
+- `vendor -> /dev/block/sde41` — 450 MiB
+- `userdata -> /dev/block/sda10` — about 51.9 GiB
+- modem / bluetooth / dsp / persist are separate partitions
+
+A read-only baseline backup of the three bootable Android images was successfully copied to the Mac under the gitignored directory:
+
+`backups/2026-09-07-baseline/`
+
+All three are exactly 67,108,864 bytes and start with the Android boot image magic `ANDROID!`. SHA-256 checksums are stored locally in `SHA256SUMS`.
+
+## CI status
+
+### Mainline-oriented
+
+GitHub Actions run `34084661436` completed successfully.
+
+It successfully:
+
+1. cloned `LemonFan-maker/MSM8998-OH-KERNEL-6.0`;
+2. configured `nx563j_oh_defconfig`;
+3. built the kernel and DTBs;
+4. uploaded the `nx563j-mainline-oriented` artifact.
+
+This proves the existing NX563J 6.0-oriented tree is reproducibly buildable in our repository CI.
+
+### Downstream 4.4.302
+
+The first CI attempt exposed obsolete CI/toolchain URLs and empty workflow inputs on push; both were fixed.
+
+The second attempt reached the real kernel build. It failed while linking the AArch32 vDSO because Clang selected the host x86 `/usr/bin/ld` for `armelf_linux_eabi`.
+
+A third CI attempt now explicitly points the compat Clang target/linker search at the Android ARM32 binutils. This is the current downstream build under validation.
