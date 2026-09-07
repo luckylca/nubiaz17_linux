@@ -55,18 +55,20 @@ Not first-stage blockers: camera, calls, VoLTE, full Android hardware parity.
 
 ## Current blocker
 
-None structural: the Nubia flash gate has been opened with the user-authorized `nubia_unlock` (userdata was wiped, as expected and accepted). The immediate work is flashing the signed smoke/diag images to `recovery` and observing the first replacement-kernel boot. The NX563J fastboot interface is flaky (froze twice; needed power cycles), so fastboot sessions must stay short.
+None. The first Linux userspace boots on real hardware with an interactive USB-network shell. All remaining work is forward development, not unblocking.
 
 ## Next device-side actions
 
-1. Re-flash the deterministic signed smoke image (`fc54ae2e...bf2a87`) to `recovery` now that the flash gate is open.
-2. Boot into recovery (hardware keys: Volume Up + Power; adb is unavailable until Android is set up again post-wipe) and observe whether the 4.4.302 kernel executes.
-3. Flash the signed diagnostic initramfs image (`ffc34ec2...` or a rebuild with the diag kernel) and capture diagnostics over USB gadget serial/network.
-4. Keep fastboot sessions short — the NX563J fastboot interface froze twice and needed power cycles.
+1. Keep the diag image in `boot` while developing (restore baseline `boot` only when stock Android is needed).
+2. Exercise storage from the shell: mount Android partitions read-only, then design the real rootfs layout on `userdata` (or a dedicated partition).
+3. Bring up SSH (dropbear) on top of the working NCM network.
 
 ## Next software actions
 
-- Run the downstream CI with `config/downstream-usb-diag.fragment` to produce the gadget-serial/RNDIS-enabled diag kernel, then rebuild the diag boot image with it.
+- Replace telnet with dropbear SSH and expand the initramfs toolset.
+- Build a persistent arm64 rootfs (Debian/Alpine-based) and a boot flow that mounts it from UFS.
+- Run the downstream CI with `config/downstream-usb-diag.fragment` to add gadget serial/RNDIS/devtmpfs to the diag kernel.
+- Investigate display bring-up (JDI R63452 panel via downstream mdss, or simple-framebuffer) and Synaptics RMI4 touch.
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
@@ -107,6 +109,15 @@ A read-only baseline backup of the three bootable Android images was successfull
 `backups/2026-09-07-baseline/`
 
 All three are exactly 67,108,864 bytes and start with the Android boot image magic `ANDROID!`. SHA-256 checksums are stored locally in `SHA256SUMS`.
+
+## 2026-09-07 first Linux shell on device
+
+**The phone now boots the deterministic downstream 4.4.302 kernel into a Linux userspace with an interactive root shell over USB.**
+
+- Boot path: `nx563j-diag-net-signed.img` (downstream `Image.gz-dtb` + busybox initramfs, NX563J-signed) flashed to `boot`; NCM gadget enumerates, `udhcpd` serves the host, `telnetd` (with devpts mounted) gives a shell at `10.42.0.1:23`.
+- Verified from the on-device shell: `Linux 4.4.302-perf+ #1 SMP PREEMPT Sun Aug 23 13:41:27 UTC 2026 aarch64`, `uid=0`, and the complete UFS partition table (`sda9` system 6 GiB, `sda10` userdata ~52 GiB, `sde18` boot, `sde19` recovery, `sde20` recovery2, `sde41` vendor).
+- Diagnostics belt-and-suspenders: sde20 raw-sector logging (works even if USB/network fails) + read-only mass-storage log LUN + NCM shell.
+- To return to stock Android at any time: fastboot session → `nubia_unlock` → `fastboot flash boot backups/2026-09-07-baseline/boot.img`.
 
 ## 2026-09-07 on-device breakthrough
 
