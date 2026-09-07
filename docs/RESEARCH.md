@@ -127,6 +127,24 @@ Before any unlock operation:
 
 Current public install documentation also confirms `Volume Down + Power` as the bootloader/fastboot key combination for NX563J.
 
+## 2026-09-07 live fastboot probe
+
+The phone was rebooted to its bootloader and inspected with `scripts/fastboot_readonly_probe.sh` (read-only `getvar` only; archived under `artifacts/fastboot-probe-2026-09-07/`):
+
+- `unlocked: yes` — the bootloader is **already unlocked**. This contradicts the Android-side `ro.boot.flash.locked=1` property and confirms that Android properties must not be used to infer bootloader state. It is consistent with the stock kernel cmdline reporting `androidboot.verifiedbootstate=orange`.
+- `secure: yes` — secure boot is active, so boot images still need a valid signature; the pinned NX563J signer remains required.
+- No A/B support: `current-slot`, `slot-count`, `slot-suffixes`, `has-slot:boot` all return "Variable Not found".
+- `partition-size:boot = 0x4000000` (64 MiB), `partition-type:boot = raw`.
+- `max-download-size = 536870912` (512 MiB) — ample for the ~15 MiB smoke image.
+- `product = msm8998`, `variant = MSM UFS`, `hw-revision = 20001`, `battery-voltage = 4291`.
+- `version-bootloader` and `version-baseband` return empty strings; `is-userspace` is absent (no fastbootd).
+
+### `fastboot boot` is not implemented
+
+Sending the deterministic signed smoke image succeeded (`Sending 'boot.img' OKAY`), but the boot command itself failed with `FAILED (remote: 'unknown command')`. Public NX563J documentation (official TWRP device page, the LineageOS install guide, XDA and 4PDA threads) consistently shows this device family flashing recovery/boot images rather than temporarily booting them; Nubia's bootloader ships a reduced fastboot command set. There is no known way to run a non-writing temporary boot on this bootloader.
+
+Consequence: the kernel smoke test requires flashing the signed image to `boot` (Android keeps its ramdisk in that image, so stock Android may still boot with the replacement kernel) or to `recovery` (stock Android boot path untouched; test by entering recovery via keys). Both are recoverable from the verified baseline backups but require explicit user authorization.
+
 ## Boot image format and signing
 
 The captured `boot` partition is a full 64 MiB dump, while the signed active Android boot image occupies only the beginning. The observed header-v0 geometry is: 4096-byte pages, kernel address `0x00008000`, ramdisk address `0x01000000`, legacy `second_addr=0x00f00000` even with `second_size == 0`, and tags address `0x00000100`.

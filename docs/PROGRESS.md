@@ -15,7 +15,8 @@ Last updated: 2026-09-07
 - Repacking that deterministic kernel twice produced the same SHA-256 `fc54ae2e...bf2a87`; both images have valid Android `/boot` signatures, exact CI kernels and the unchanged baseline Android ramdisk.
 - The earlier smoke image SHA-256 `75b02e992020d501ae51c03791c4fdbd68958211626666c57aeb4cbe849305c4` is retained only as a historical pre-deterministic build and is superseded by the `fc54ae2e...` candidate.
 - No device partition write, unlock, or flash has been performed.
-- The phone is currently reachable over ADB again (serial `392a99df`); the next device milestone is a read-only fastboot-state inspection followed, if accepted, by non-writing `fastboot boot <signed-image>`.
+- Read-only fastboot inspection is complete (2026-09-07): the bootloader is **already unlocked** (`unlocked: yes`) with secure boot still enforcing image signatures (`secure: yes`); non-A/B confirmed (all slot variables absent); `partition-size:boot = 0x4000000` (64 MiB); `max-download-size = 512 MiB`; `hw-revision = 20001`. Full output archived locally under `artifacts/fastboot-probe-2026-09-07/`.
+- `fastboot boot <image>` is **not implemented** by the NX563J Nubia bootloader: the image transfers successfully but the boot command itself fails with `FAILED (remote: 'unknown command')`. Public NX563J sources (TWRP/LineageOS docs, XDA, 4PDA) confirm this device family only supports flash-based installation. The smoke test therefore requires a (recoverable) partition write and is pending explicit user authorization.
 - CI now pins exact kernel source revisions and records resolved source commits in new artifacts: downstream `cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6`, 6.0-oriented bridge `a07b78d3526376cfb8ef136bd0fa279163ac5e3f`.
 
 ## Fixed target
@@ -51,14 +52,13 @@ Not first-stage blockers: camera, calls, VoLTE, full Android hardware parity.
 
 ## Current blocker
 
-None on the software side: both kernel CI paths are bit-for-bit reproducible and the deterministic signed smoke boot candidate is ready. The remaining gating work is device-side: confirm the real bootloader state over read-only fastboot, then test `fastboot boot` with the signed smoke image.
+The software side is ready, but the smoke test now requires a partition write: the NX563J bootloader does not support non-writing `fastboot boot`, so the deterministic signed smoke image must be flashed to `boot` (or `recovery`) to run. Flashing is recoverable — the verified baseline images in `backups/2026-09-07-baseline/` can be restored at any time — but it requires explicit user authorization.
 
 ## Next device-side actions
 
-1. Reboot the phone into fastboot mode.
-2. Run `scripts/fastboot_readonly_probe.sh` and archive output under `artifacts/fastboot-probe-<date>/`.
-3. Determine `secure` / `unlocked` / `partition-size:boot` / `max-download-size` from the probe, not from Android properties.
-4. If the bootloader accepts non-writing temporary boot, run `fastboot boot` with the deterministic signed smoke image (`fc54ae2e...bf2a87`).
+1. Obtain user authorization to flash the deterministic signed smoke image (`fc54ae2e...bf2a87`) to the `boot` or `recovery` partition.
+2. Flash the image, boot it, and capture diagnostics (screen state, ADB reappearance, USB enumeration).
+3. Restore the matching baseline image afterwards if the test fails or the device must return to stock Android.
 
 ## Next software actions
 
