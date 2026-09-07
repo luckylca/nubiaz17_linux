@@ -144,6 +144,8 @@ Removing the existing signature and signing the unchanged payload again with tha
 
 ## Verified downstream artifact and smoke image
 
+This section records the earlier pre-deterministic successful build. Its kernel-only smoke image is superseded by the deterministic verification below.
+
 GitHub Actions run `34090477218` produced the successful downstream artifact. The full artifact ZIP matches GitHub's published SHA-256 `b469fdf9f770f2c3a2932f29c2ac07636307e4cb9fd71e83fb4c6310334376a8`; its internal `SHA256SUMS` also validates all files after accounting only for the archive-relative path prefix used when the manifest was generated.
 
 `Image.gz-dtb` has SHA-256 `45d8a24acfe0c74381c0a165345fa3b0d291370e80c04d11c89ba77b6cd9d9e1`, size `14,107,665` bytes, and contains three structurally valid NX563J DTBs. The current Android kernel payload also contains three concatenated valid DTBs, so downstream boot packaging must retain the complete `Image.gz-dtb`, not a bare `Image.gz`.
@@ -162,3 +164,47 @@ The workflows now default to exact source revisions instead of moving branches:
 - existing NX563J 6.0-oriented bridge: `a07b78d3526376cfb8ef136bd0fa279163ac5e3f`
 
 Manual workflow dispatch still accepts a commit, branch, or tag. New artifacts record both the requested ref and the resolved source commit.
+
+## Deterministic rebuild verification
+
+The workflows derive `SOURCE_DATE_EPOCH` and `KBUILD_BUILD_TIMESTAMP` from the resolved kernel source commit and fix `KBUILD_BUILD_USER=nx563j-ci`, `KBUILD_BUILD_HOST=github-actions`, and `KBUILD_BUILD_VERSION=1`.
+
+### Downstream 4.4.302
+
+Two independent GitHub Actions builds used pinned source `cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6`: round 1 was run `34096169657`; round 2 was run `34098047268`.
+
+Extracted outputs are byte-identical across both runs:
+
+- `Image.gz-dtb`: `e9f330df487d2681fb6783526053feccba3290d1323556bcdea5c405484c7a4f`
+- `msm8998-mtp-NX563J.dtb`: `40d78302b7abbbed8214bdcf277355b5ede55a7d107e1f0f63110389812d0bc5`
+- `msm8998-v2-mtp-NX563J.dtb`: `b5c332806e12c001d7ad06489b8fb48a19722d2599a32344ebd967c346f397ea`
+- `msm8998-v2.1-mtp-NX563J.dtb`: `cabb6abec24982e7914a08f31b4934d6c6e2cf0e2f9263a1a56857216d1afed6`
+- `kernel.config`: `fd04285db4ca7a4b6cd122738f218a3b59b1317e8dcfd4d0d2978c63f8034e9b`
+
+The embedded build identity is fixed to `nx563j-ci@github-actions` and source time `Sun Aug 23 13:41:27 UTC 2026`.
+
+### NX563J Linux 6.0-oriented bridge
+
+Two independent GitHub Actions builds used pinned source `a07b78d3526376cfb8ef136bd0fa279163ac5e3f`: round 1 was run `34096169661`; round 2 was run `34098047345`.
+
+Extracted outputs are byte-identical across both runs:
+
+- `Image.gz`: `e5bf0e737d8e83df7a57e4d1d81d8a73d0949528f3e8ab7ce984a13510b4002f`
+- `msm8998-nubia-nx563j.dtb`: `49cb986073909988b271b658b51cf18eda9fe2f0a11100071be20a559deac64a`
+- `kernel.config`: `57e9e36b849a899e2f82ecb9e32a7fd76ed4f212caa1748070149207a9d62a83`
+
+The embedded build identity is fixed to `nx563j-ci@github-actions` and source time `Sun Jun 8 05:03:13 UTC 2025`.
+
+GitHub's uploaded artifact ZIP digests differ between runs because each run has a separate upload container. The reproducibility claim is intentionally about the extracted kernel, DTB, config, and source-metadata outputs, which are byte-identical.
+
+## Deterministic signed smoke boot
+
+Using the reproducible downstream `Image.gz-dtb`, the baseline Android ramdisk and the pinned NX563J signer produces:
+
+- `nx563j-lineage-22.2-deterministic-kernel-only-smoke-signed.img`
+- size: `15,426,856` bytes
+- SHA-256: `fc54ae2eb61c8c55d93f9c5a2aab8ace67f5298b6ed3025c8a7cf94658bf2a87`
+
+The image verifies with the NX563J Android `/boot` signature. Re-running the complete repack/sign process with identical inputs produced the exact same SHA-256, so the signed smoke-image packaging path is also bit-for-bit reproducible.
+
+The earlier smoke SHA-256 `75b02e992020d501ae51c03791c4fdbd68958211626666c57aeb4cbe849305c4` came from the pre-deterministic kernel build and is no longer the preferred test candidate.

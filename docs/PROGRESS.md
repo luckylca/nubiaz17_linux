@@ -7,12 +7,13 @@ Last updated: 2026-09-07
 ## Current authoritative status
 
 - Full 64 MiB read-only backups of `boot`, `recovery`, and `recovery2` are captured and hashed under the gitignored Mac backup directory.
-- The existing NX563J Linux 6.0-oriented bridge builds successfully in GitHub Actions.
-- LineageOS 4.4.302 downstream also builds successfully; run `34090477218` produced a verified `Image.gz-dtb` artifact.
-- The downstream build uses Linux `4.4.302-perf+` with Android Clang r450784d / Clang 14.0.6.
-- `scripts/repack_signed_boot.sh` is committed and reproduces the original signed boot active image bit-for-bit when given the original kernel and ramdisk.
-- The first kernel-only signed smoke image is generated and statically verified: `nx563j-lineage-22.2-kernel-only-smoke-signed.img`, size `15,426,856` bytes, SHA-256 `75b02e992020d501ae51c03791c4fdbd68958211626666c57aeb4cbe849305c4`.
-- That smoke image has a valid Android `/boot` signature; its unpacked kernel exactly matches the verified CI `Image.gz-dtb`, and its ramdisk exactly matches the baseline Android boot ramdisk.
+- The existing NX563J Linux 6.0-oriented bridge builds successfully and its extracted kernel outputs are bit-for-bit reproducible across independent GitHub Actions runs `34096169661` and `34098047345`.
+- LineageOS 4.4.302 downstream also builds successfully and its extracted kernel outputs are bit-for-bit reproducible across independent runs `34096169657` and `34098047268`.
+- The reproducible downstream `Image.gz-dtb` SHA-256 is `e9f330df487d2681fb6783526053feccba3290d1323556bcdea5c405484c7a4f`; it uses Linux `4.4.302-perf+` with Android Clang r450784d / Clang 14.0.6.
+- `scripts/repack_signed_boot.sh` is committed and produces bit-identical signed boot images for identical inputs.
+- The current kernel-only smoke candidate is `nx563j-lineage-22.2-deterministic-kernel-only-smoke-signed.img`, size `15,426,856` bytes, SHA-256 `fc54ae2eb61c8c55d93f9c5a2aab8ace67f5298b6ed3025c8a7cf94658bf2a87`.
+- Repacking that deterministic kernel twice produced the same SHA-256 `fc54ae2e...bf2a87`; both images have valid Android `/boot` signatures, exact CI kernels and the unchanged baseline Android ramdisk.
+- The earlier smoke image SHA-256 `75b02e992020d501ae51c03791c4fdbd68958211626666c57aeb4cbe849305c4` is retained only as a historical pre-deterministic build and is superseded by the `fc54ae2e...` candidate.
 - No device partition write, unlock, or flash has been performed.
 - The phone is currently absent from ADB/fastboot, so the next device milestone is a read-only fastboot-state inspection followed, if accepted, by non-writing `fastboot boot <signed-image>`.
 - CI now pins exact kernel source revisions and records resolved source commits in new artifacts: downstream `cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6`, 6.0-oriented bridge `a07b78d3526376cfb8ef136bd0fa279163ac5e3f`.
