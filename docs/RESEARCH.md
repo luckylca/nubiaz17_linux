@@ -272,3 +272,46 @@ Using the reproducible downstream `Image.gz-dtb`, the baseline Android ramdisk a
 The image verifies with the NX563J Android `/boot` signature. Re-running the complete repack/sign process with identical inputs produced the exact same SHA-256, so the signed smoke-image packaging path is also bit-for-bit reproducible.
 
 The earlier smoke SHA-256 `75b02e992020d501ae51c03791c4fdbd68958211626666c57aeb4cbe849305c4` came from the pre-deterministic kernel build and is no longer the preferred test candidate.
+
+## 2026-09-08 persistent rootfs boot + SSH
+
+Boot flow now flashed to `boot` (`nx563j-diag-rootfs-signed.img`, SHA-256
+`a0e81e7558ca8374f806d05492f6b64169f1c4256bac4685ff8e43350cd2fee0`):
+
+1. initramfs brings up the NCM gadget, usb0 `10.42.0.1`, udhcpd, telnetd.
+2. initramfs mounts userdata (`/dev/sda10`, ext4 driver on the ext3-made fs)
+   at `/mnt/rootfs`, bind-mounts `/dev` `/proc` `/sys`, mounts devpts inside.
+3. initramfs runs `chroot /mnt/rootfs /root/rc.boot`, which sets the hostname,
+   generates persistent dropbear host keys on first boot, and starts
+   `dropbear -E -p 22`.
+
+Because dropbear is started chrooted, SSH sessions land directly in the
+Alpine rootfs with `/` = sda10. Rootfs-side changes (new services in
+`rc.boot`) no longer require reflashing the boot image.
+
+Access: `ssh -i work/nx563j_key root@10.42.0.1` (key auth; root password
+`nx563j` also enabled). telnet on port 23 remains as fallback.
+
+Lessons recorded:
+
+- **busybox `reboot` ignores the reason argument** (verified for Debian
+  busybox-static 1.35 and Alpine busybox 1.36.1): `reboot bootloader` just
+  reboots normally. Entering fastboot from a Linux shell requires the raw
+  `reboot(LINUX_REBOOT_CMD_RESTART2, "bootloader")` syscall. The 175-byte
+  static stub in `tools/reboot-bootloader/` (hand-assembled, wrapped in a
+  minimal ELF64 by `build_reboot_bl.sh`, no cross-binutils needed) does this
+  and is proven on device.
+- **No `sftp-server` / `scp` on the Alpine minirootfs**, so OpenSSH `scp`
+  fails ("Connection closed"). Transfer files with
+  `ssh ... 'cat > /path' < localfile` (or the foreground `nc` pattern).
+- The dropbear host keys persist in `/etc/dropbear/` on sda10, so host
+  identity is stable across reboots.
+- `mkfs.vfat` is absent from the Debian busybox-static build, so the
+  mass-storage log LUN is skipped at boot (sde20 raw-sector logging remains
+  the primary side channel and is unaffected).
+- Curiosity, not a problem: the freshly made userdata filesystem reports
+  ~21 GiB used although the Alpine install is tiny — mkfs wrote fresh
+  metadata over the old Android userdata without zeroing, and the ext
+  accounting reflects that. 29.7 GiB free is plenty; revisit if the rootfs
+  is ever recreated (zero the first sectors or use `mke2fs -E lazy_itable_init=0`
+  and discard first).

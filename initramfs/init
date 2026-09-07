@@ -1,10 +1,11 @@
 #!/bin/sh
-# NX563J diagnostic initramfs init — USB network shell edition.
+# NX563J diagnostic initramfs init — USB network shell + persistent rootfs.
 #
 # Proven on device: kernel reaches userspace, UDC binds, NCM enumerates.
 # This edition brings up usb0 with a static IP, serves DHCP to the host,
-# starts telnetd for a shell, keeps a read-only log LUN, and mirrors all
-# diagnostics into the recovery2 (sde20) log partition.
+# starts telnetd for a shell, keeps a read-only log LUN, mirrors all
+# diagnostics into the recovery2 (sde20) log partition, mounts the Alpine
+# rootfs from userdata (sda10), and runs its /root/rc.boot (dropbear SSH).
 
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 LOGDEV=""
@@ -143,6 +144,39 @@ if [ -e /dev/ttyGS0 ]; then
       sleep 1
     done
   ) &
+fi
+
+# --- persistent rootfs on userdata (sda10) --------------------------------------
+ROOTFS=/mnt/rootfs
+mkdir -p $ROOTFS
+i=0
+while [ $i -lt 30 ]; do
+  [ -b /dev/sda10 ] && break
+  if [ ! -e /dev/sda10 ] && [ -d /sys/block/sda/sda10 ]; then
+    mknod /dev/sda10 b 8 10 2>/dev/null && break
+  fi
+  sleep 1
+  i=$((i + 1))
+done
+if [ -b /dev/sda10 ]; then
+  if mount -t ext4 -o noatime /dev/sda10 $ROOTFS 2>/dev/null \
+  || mount /dev/sda10 $ROOTFS 2>/dev/null; then
+    mark "rootfs mounted from sda10 (waited ${i}s)"
+    mount -o bind /dev $ROOTFS/dev 2>/dev/null
+    mount -t devpts devpts $ROOTFS/dev/pts 2>/dev/null
+    mount -o bind /proc $ROOTFS/proc 2>/dev/null
+    mount -o bind /sys $ROOTFS/sys 2>/dev/null
+    if [ -x $ROOTFS/root/rc.boot ]; then
+      chroot $ROOTFS /root/rc.boot
+      mark "rootfs rc.boot done (dropbear etc.)"
+    else
+      mark "no $ROOTFS/root/rc.boot"
+    fi
+  else
+    mark "sda10 mount failed"
+  fi
+else
+  mark "sda10 never appeared"
 fi
 
 # --- diagnostics dump -----------------------------------------------------------

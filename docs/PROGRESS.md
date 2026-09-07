@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 > **Current authoritative status:** the live inventory, backups, both kernel CI paths, and signed boot repacking are already complete. The "Current blocker" and "Next actions" sections below reflect the remaining device-side work.
 
@@ -59,18 +59,28 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 
 ## Next device-side actions
 
-1. Keep the diag image in `boot` while developing (restore baseline `boot` only when stock Android is needed).
-2. Exercise storage from the shell: mount Android partitions read-only, then design the real rootfs layout on `userdata` (or a dedicated partition).
-3. Bring up SSH (dropbear) on top of the working NCM network.
+1. Keep the rootfs-booting diag image in `boot` while developing (restore baseline `boot` only when stock Android is needed).
+2. Harden the Alpine rootfs as a server: package set, services in `/root/rc.boot` (or migrate to OpenRC/switch_root), storage layout for data.
+3. Bring up display (JDI R63452) and touch (Synaptics RMI4).
 
 ## Next software actions
 
-- Replace telnet with dropbear SSH and expand the initramfs toolset.
-- Build a persistent arm64 rootfs (Debian/Alpine-based) and a boot flow that mounts it from UFS.
-- Run the downstream CI with `config/downstream-usb-diag.fragment` to add gadget serial/RNDIS/devtmpfs to the diag kernel.
+- Run the downstream CI with `config/downstream-usb-diag.fragment` to add gadget serial/RNDIS/devtmpfs to the diag kernel (needs `gh auth login` on the Mac).
+- Migrate the boot flow from busybox-PID1+chroot toward switch_root into the Alpine rootfs with OpenRC service management.
 - Investigate display bring-up (JDI R63452 panel via downstream mdss, or simple-framebuffer) and Synaptics RMI4 touch.
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
+
+## 2026-09-08 persistent Linux rootfs with SSH at boot
+
+**The phone now boots straight into a persistent Alpine Linux system on userdata and serves SSH over USB — no manual steps after power-on.**
+
+- New flashed image: `nx563j-diag-rootfs-signed.img` (proven deterministic downstream 4.4.302 kernel `e9f330df...c405484c7a4f` + new initramfs), SHA-256 `a0e81e7558ca8374f806d05492f6b64169f1c4256bac4685ff8e43350cd2fee0`.
+- Boot chain (verified end-to-end over two reboots via the sde20 stage log): initramfs → NCM gadget `10.42.0.1` + DHCP + telnetd → mounts `/dev/sda10` at `/mnt/rootfs` → bind-mounts dev/proc/sys + devpts → `chroot /mnt/rootfs /root/rc.boot` → dropbear on `:22` with persistent host keys.
+- SSH lands chrooted directly in the Alpine rootfs (`/` = 51 GiB userdata, ext4): `ssh -i work/nx563j_key root@10.42.0.1`, root password `nx563j`. Key auth and password auth both verified; Alpine 3.20.3, `uid=0`.
+- `rc.boot` lives in the rootfs, so service changes no longer require reflashing `boot`.
+- New tool `tools/reboot-bootloader/`: a 175-byte static aarch64 ELF issuing `reboot(RESTART2, "bootloader")` — the only way to reach fastboot from a Linux shell (busybox `reboot` ignores the reason argument). Proven on device; build is bit-reproducible (`e73ee00e...c0585c764`).
+- Full stage log this boot: `init alive → ncm ok → UDC bound → usb0 up (0s) → rootfs mounted (0s) → rc.boot done → diag ready`.
 
 ## 2026-09-07 live device inventory
 

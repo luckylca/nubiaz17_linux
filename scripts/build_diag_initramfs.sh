@@ -30,7 +30,7 @@ if [[ "$ACTUAL" != "$BUSYBOX_DEB_SHA256" ]]; then
 fi
 
 rm -rf root data-extract
-mkdir -p root/bin root/dev root/proc root/sys root/config root/mnt/logdisk data-extract
+mkdir -p root/bin root/dev root/proc root/sys root/config root/mnt/logdisk root/mnt/rootfs data-extract
 tar -xf busybox-static_arm64.deb -C data-extract
 tar -xf data-extract/data.tar.xz -C root ./bin/busybox
 chmod 755 root/bin/busybox
