@@ -55,10 +55,20 @@ jobs:
 
       - name: Build
         working-directory: work/kernel
+        shell: bash
         run: |
+          set +e
           export PATH="$GITHUB_WORKSPACE/work/toolchains/clang/bin:$PATH"
-          make -j"$(nproc)" O=out ARCH=arm64             CLANG_TRIPLE=aarch64-linux-gnu-             CROSS_COMPILE="$GITHUB_WORKSPACE/work/toolchains/gcc64/bin/aarch64-linux-android-"             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CROSS_COMPILE_COMPAT="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1             CLANG_TARGET_ARM32="--target=arm-linux-androideabi -B$GITHUB_WORKSPACE/work/toolchains/gcc32/bin"
-
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/downstream"
+          make -j"$(nproc)" O=out ARCH=arm64             CLANG_TRIPLE=aarch64-linux-gnu-             CROSS_COMPILE="$GITHUB_WORKSPACE/work/toolchains/gcc64/bin/aarch64-linux-android-"             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CROSS_COMPILE_COMPAT="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1             CLANG_TARGET_ARM32="--target=arm-linux-androideabi -B$GITHUB_WORKSPACE/work/toolchains/gcc32/bin"             2>&1 | tee "$GITHUB_WORKSPACE/artifacts/downstream/build.log"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            echo "Kernel build failed with exit code $rc"
+            grep -E -i "error:|fatal:|undefined reference|cannot find|unrecognized|unsupported|ld:|make\\[[0-9]+\\].*\\*\\*\\*" "$GITHUB_WORKSPACE/artifacts/downstream/build.log" | tail -n 30 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit "$rc"
+          fi
       - name: Collect artifacts
         run: |
           mkdir -p artifacts/downstream
