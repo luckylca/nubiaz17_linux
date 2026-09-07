@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       kernel_ref:
-        description: Kernel branch/tag
+        description: Kernel commit, branch or tag
         required: true
-        default: lineage-22.2
+        default: cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6
       defconfig:
         description: Kernel defconfig
         required: true
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
-      KERNEL_REF: ${{ inputs.kernel_ref || 'lineage-22.2' }}
+      KERNEL_REF: ${{ inputs.kernel_ref || 'cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6' }}
       DEFCONFIG: ${{ inputs.defconfig || 'lineageos_nx563j_defconfig' }}
 
     steps:
@@ -44,9 +44,16 @@ jobs:
           wget -q             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz             -O work/gcc32.tar.gz
           tar -xzf work/gcc32.tar.gz -C work/toolchains/gcc32
 
-      - name: Clone LineageOS kernel
+      - name: Clone pinned LineageOS kernel
         run: |
-          git clone --depth=1 --branch "$KERNEL_REF"             https://github.com/LineageOS/android_kernel_nubia_msm8998.git             work/kernel
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/LineageOS/android_kernel_nubia_msm8998.git \
+            work/kernel
+          git -C work/kernel fetch --depth=1 origin "$KERNEL_REF"
+          git -C work/kernel checkout --detach FETCH_HEAD
+          actual_commit="$(git -C work/kernel rev-parse HEAD)"
+          echo "KERNEL_COMMIT=$actual_commit" >> "$GITHUB_ENV"
+          echo "Kernel source commit: $actual_commit" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Apply downstream compatibility patches
         working-directory: work/kernel
@@ -78,6 +85,8 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p artifacts/downstream
+          printf '%s\n' "$KERNEL_REF" > artifacts/downstream/KERNEL_REQUESTED_REF
+          printf '%s\n' "$KERNEL_COMMIT" > artifacts/downstream/KERNEL_SOURCE_COMMIT
           cp work/kernel/out/arch/arm64/boot/Image.gz-dtb artifacts/downstream/
           cp work/kernel/out/.config artifacts/downstream/kernel.config
           find work/kernel/out/arch -type f -name '*NX563J*.dtb' -exec cp {} artifacts/downstream/ \; || true

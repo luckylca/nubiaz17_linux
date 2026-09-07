@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: Source branch/tag
+        description: Source commit, branch or tag
         required: true
-        default: master
+        default: a07b78d3526376cfb8ef136bd0fa279163ac5e3f
       defconfig:
         description: Kernel defconfig
         required: true
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
-      SOURCE_REF: ${{ inputs.source_ref || 'master' }}
+      SOURCE_REF: ${{ inputs.source_ref || 'a07b78d3526376cfb8ef136bd0fa279163ac5e3f' }}
       DEFCONFIG: ${{ inputs.defconfig || 'nx563j_oh_defconfig' }}
 
     steps:
@@ -31,9 +31,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y             bc bison build-essential device-tree-compiler flex gcc-aarch64-linux-gnu             libelf-dev libssl-dev python3 rsync
 
-      - name: Clone existing NX563J mainline-oriented tree
+      - name: Clone pinned NX563J mainline-oriented tree
         run: |
-          git clone --depth=1 --branch "$SOURCE_REF"             https://github.com/LemonFan-maker/MSM8998-OH-KERNEL-6.0.git             work/kernel
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/LemonFan-maker/MSM8998-OH-KERNEL-6.0.git \
+            work/kernel
+          git -C work/kernel fetch --depth=1 origin "$SOURCE_REF"
+          git -C work/kernel checkout --detach FETCH_HEAD
+          actual_commit="$(git -C work/kernel rev-parse HEAD)"
+          echo "SOURCE_COMMIT=$actual_commit" >> "$GITHUB_ENV"
+          echo "Kernel source commit: $actual_commit" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure
         working-directory: work/kernel
@@ -48,6 +55,8 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p artifacts/mainline
+          printf '%s\n' "$SOURCE_REF" > artifacts/mainline/KERNEL_REQUESTED_REF
+          printf '%s\n' "$SOURCE_COMMIT" > artifacts/mainline/KERNEL_SOURCE_COMMIT
           cp work/kernel/arch/arm64/boot/Image.gz artifacts/mainline/
           cp work/kernel/.config artifacts/mainline/kernel.config
           find work/kernel/arch/arm64/boot/dts/qcom -type f             \( -name 'msm8998-nubia-nx563j.dtb' -o -name '*nx563j*.dtb' \)             -exec cp {} artifacts/mainline/ \;
