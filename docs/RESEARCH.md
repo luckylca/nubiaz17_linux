@@ -167,6 +167,29 @@ Extended device work revealed a repeatable pattern:
 - Do not run host-side polling loops that repeatedly open the fastboot interface (`getvar` monitors) concurrently with real fastboot operations — a hung polling child holds the interface and starves the real command (`< waiting for any device >` while `fastboot devices` still lists the phone).
 - The first `fastboot oem nubia_unlock NUBIA_NX563J` attempt silently never executed (issued into a wedged session; the command hung and was killed). A later attempt in a fresh session succeeded instantly with `START update nubia fastboot unlock flag!!! / set state to 1 ok!!!`. Lesson: treat any hung fastboot command as NOT executed and re-run it in a verified-live session.
 - With the Nubia flash gate open, `fastboot flash recovery <signed smoke image>` completed normally (`Sending OKAY`, `Writing OKAY`). `fastboot reboot recovery` is accepted by this bootloader but the device booted the stock `boot` partition anyway (kernel `4.4.194`), so use `adb reboot recovery` (BCB/misc) or hardware keys to actually land on the recovery partition.
+- The Nubia flash gate (`Nubia fastboot unlocked`) is **not persistent**: `fastboot oem nubia_unlock NUBIA_NX563J` must be re-issued in every fastboot session before any flash. Each session: power-cycle into fastboot, fire `nubia_unlock`, then flash immediately — the interface stops answering after sitting idle.
+
+## 2026-09-07 on-device bring-up results
+
+### What works
+
+- The deterministic downstream 4.4.302 kernel (`Image.gz-dtb`) boots on real NX563J hardware from the `boot` partition and reaches userspace. Full `dmesg` captured and healthy.
+- The minimal initramfs (Debian arm64 busybox-static + `/init`) runs on both stock 4.4.194 and downstream 4.4.302 kernels.
+- USB gadget: UDC `a800000.dwc3` binds from configfs; `ncm.usb0` and `mass_storage.usb0` work on both stock and downstream defconfigs (no ACM/serial/RNDIS/ECM — see `config/downstream-usb-diag.fragment` for a diag kernel). The composite gadget reaches `state=configured`; macOS enumerates the NCM interface and takes a DHCP lease from the on-device `udhcpd`.
+- Diagnostics channel: the initramfs writes stage markers, `dmesg`, and system listings into raw sectors of the idle `recovery2` partition (`/dev/block/sde20`, user-authorized, baseline image backed up). Rooted stock Android reads them back with `dd`. This works regardless of screen, USB, or network state, and needs only the kernel's UFS driver.
+
+### What does not work / dead ends
+
+- Booting the stock-Android ramdisk with the replacement kernel (kernel-only smoke) fails in the Android userspace flow (`root=/dev/dm-0` dm-verity chain) — the device falls back to fastboot. The kernel itself is fine; the Android boot chain was never the goal.
+- pstore/ramoops: stock kernel reserves `persistent_ram` regions but never registers a ramoops backend (nothing in `dmesg`, `/sys/fs/pstore` empty even after deliberate `sysrq-c`). Downstream DTB has no ramoops node. Do not rely on pstore on this device.
+- Screen console: stock and downstream 4.4 defconfigs have `CONFIG_VT`/framebuffer console disabled, so `console=tty0` shows nothing. The bootloader appends `console=ttyMSM0,115200,n8 earlycon=msm_serial_dm,0xc1b0000` (stock cmdline), i.e. logs go to the DM UART — not accessible without opening the device.
+
+### initramfs pitfalls hit (and fixed)
+
+- `/init` has a `#!/bin/sh` shebang, and the kernel resolves the interpreter before userspace exists: the cpio must contain a real `/bin/sh -> busybox` symlink, otherwise the kernel panics with "No working init found" (silent black screen here).
+- `busybox telnetd` needs devpts (`/dev/pts` + `/dev/ptmx`), otherwise connections drop instantly.
+- Debian busybox-static arm64 (`busybox-static_1.35.0-4+deb12u1+b1_arm64.deb`, SHA-256 `732c9135...2a52f5`) runs fine on Kryo 280; pinned in `scripts/build_diag_initramfs.sh`.
+- `busybox udhcpd` daemonizes by default; `mkfs.vfat`+loop mount of the log LUN works, but any hang there blocks gadget bind — keep LUN setup after network bring-up or well guarded.
 
 ## Boot image format and signing
 
