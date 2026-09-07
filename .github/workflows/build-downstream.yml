@@ -44,11 +44,12 @@ jobs:
           wget -q             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz             -O work/gcc32.tar.gz
           tar -xzf work/gcc32.tar.gz -C work/toolchains/gcc32
 
-      - name: Clone pinned LineageOS kernel
+      - name: Fetch pinned LineageOS kernel
         run: |
-          git clone --filter=blob:none --no-checkout \
-            https://github.com/LineageOS/android_kernel_nubia_msm8998.git \
-            work/kernel
+          mkdir -p work/kernel
+          git -C work/kernel init -q
+          git -C work/kernel remote add origin \
+            https://github.com/LineageOS/android_kernel_nubia_msm8998.git
           git -C work/kernel fetch --depth=1 origin "$KERNEL_REF"
           git -C work/kernel checkout --detach FETCH_HEAD
           actual_commit="$(git -C work/kernel rev-parse HEAD)"

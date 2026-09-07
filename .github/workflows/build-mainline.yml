@@ -31,11 +31,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y             bc bison build-essential device-tree-compiler flex gcc-aarch64-linux-gnu             libelf-dev libssl-dev python3 rsync
 
-      - name: Clone pinned NX563J mainline-oriented tree
+      - name: Fetch pinned NX563J mainline-oriented tree
         run: |
-          git clone --filter=blob:none --no-checkout \
-            https://github.com/LemonFan-maker/MSM8998-OH-KERNEL-6.0.git \
-            work/kernel
+          mkdir -p work/kernel
+          git -C work/kernel init -q
+          git -C work/kernel remote add origin \
+            https://github.com/LemonFan-maker/MSM8998-OH-KERNEL-6.0.git
           git -C work/kernel fetch --depth=1 origin "$SOURCE_REF"
           git -C work/kernel checkout --detach FETCH_HEAD
           actual_commit="$(git -C work/kernel rev-parse HEAD)"
