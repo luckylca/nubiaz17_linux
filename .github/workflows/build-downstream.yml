@@ -15,6 +15,10 @@ on:
         description: Kernel defconfig
         required: true
         default: lineageos_nx563j_defconfig
+      config_fragment:
+        description: Optional in-repo config fragment applied after defconfig (e.g. config/downstream-usb-diag.fragment)
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -24,6 +28,7 @@ jobs:
     env:
       KERNEL_REF: ${{ inputs.kernel_ref || 'cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6' }}
       DEFCONFIG: ${{ inputs.defconfig || 'lineageos_nx563j_defconfig' }}
+      CONFIG_FRAGMENT: ${{ inputs.config_fragment || '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -78,6 +83,21 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/work/toolchains/clang/bin:$GITHUB_WORKSPACE/work/toolchains/gcc32/bin:$PATH"
           make -j"$(nproc)" O=out ARCH=arm64             CLANG_TRIPLE=aarch64-linux-gnu-             CROSS_COMPILE="$GITHUB_WORKSPACE/work/toolchains/gcc64/bin/aarch64-linux-android-"             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CROSS_COMPILE_COMPAT="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1             CLANG_TARGET_ARM32="--target=arm-linux-androideabi -B$GITHUB_WORKSPACE/work/toolchains/gcc32/bin"             "$DEFCONFIG"
 
+      - name: Apply optional config fragment
+        if: env.CONFIG_FRAGMENT != ''
+        working-directory: work/kernel
+        run: |
+          test -f "$GITHUB_WORKSPACE/$CONFIG_FRAGMENT"
+          export PATH="$GITHUB_WORKSPACE/work/toolchains/clang/bin:$GITHUB_WORKSPACE/work/toolchains/gcc32/bin:$PATH"
+          scripts/kconfig/merge_config.sh -m -O out "out/.config" "$GITHUB_WORKSPACE/$CONFIG_FRAGMENT"
+          make -j"$(nproc)" O=out ARCH=arm64             CLANG_TRIPLE=aarch64-linux-gnu-             CROSS_COMPILE="$GITHUB_WORKSPACE/work/toolchains/gcc64/bin/aarch64-linux-android-"             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CROSS_COMPILE_COMPAT="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1             CLANG_TARGET_ARM32="--target=arm-linux-androideabi -B$GITHUB_WORKSPACE/work/toolchains/gcc32/bin"             olddefconfig
+          cp "$GITHUB_WORKSPACE/$CONFIG_FRAGMENT" "$GITHUB_WORKSPACE/artifacts/downstream/applied.fragment" 2>/dev/null || {
+            mkdir -p "$GITHUB_WORKSPACE/artifacts/downstream"
+            cp "$GITHUB_WORKSPACE/$CONFIG_FRAGMENT" "$GITHUB_WORKSPACE/artifacts/downstream/applied.fragment"
+          }
+          echo "ARTIFACT_SUFFIX=-$(basename "$CONFIG_FRAGMENT" .fragment)" >> "$GITHUB_ENV"
+          echo "Applied config fragment: $CONFIG_FRAGMENT" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build
         working-directory: work/kernel
         shell: bash
@@ -106,6 +126,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nx563j-downstream-${{ env.KERNEL_REF }}
+          name: nx563j-downstream-${{ env.KERNEL_REF }}${{ env.ARTIFACT_SUFFIX }}
           path: artifacts/downstream/
           if-no-files-found: error

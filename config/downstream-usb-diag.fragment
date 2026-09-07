@@ -1,0 +1,17 @@
+# Optional downstream config fragment for the diagnostic kernel build.
+# Enables USB gadget serial/ethernet functions and devtmpfs so the
+# diagnostic initramfs can offer a shell without a working panel.
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_USB_U_SERIAL=y
+CONFIG_USB_U_ETHER=y
+CONFIG_USB_F_SERIAL=y
+CONFIG_USB_F_ACM=y
+CONFIG_USB_F_RNDIS=y
+CONFIG_USB_F_ECM=y
+CONFIG_USB_G_SERIAL=y
+CONFIG_USB_G_NCM=y
+CONFIG_USB_CONFIGFS_SERIAL=y
+CONFIG_USB_CONFIGFS_ACM=y
+CONFIG_USB_CONFIGFS_RNDIS=y
+CONFIG_USB_CONFIGFS_ECM=y

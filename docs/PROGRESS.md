@@ -17,7 +17,9 @@ Last updated: 2026-09-07
 - No device partition write, unlock, or flash has been performed.
 - Read-only fastboot inspection is complete (2026-09-07): the bootloader is **already unlocked** (`unlocked: yes`) with secure boot still enforcing image signatures (`secure: yes`); non-A/B confirmed (all slot variables absent); `partition-size:boot = 0x4000000` (64 MiB); `max-download-size = 512 MiB`; `hw-revision = 20001`. Full output archived locally under `artifacts/fastboot-probe-2026-09-07/`.
 - `fastboot boot <image>` is **not implemented** by the NX563J Nubia bootloader: the image transfers successfully but the boot command itself fails with `FAILED (remote: 'unknown command')`. Public NX563J sources (TWRP/LineageOS docs, XDA, 4PDA) confirm this device family only supports flash-based installation.
-- A user-authorized flash of the signed smoke image to `recovery` was **rejected by the bootloader**: `Flashing is not allowed in Lock State`. `fastboot oem device-info` shows a two-tier lock: `Device unlocked: true` but `Nubia fastboot unlocked: false`. Opening the flash gate requires `fastboot oem nubia_unlock NUBIA_NX563J` (expected to factory-reset userdata) or an EDL/9008 flash path — both pending explicit user decision. No partition content was modified.
+- A user-authorized flash of the signed smoke image to `recovery` was initially rejected (`Flashing is not allowed in Lock State`; `Nubia fastboot unlocked: false`). The user then authorized the documented unlock: `fastboot oem nubia_unlock NUBIA_NX563J` was executed (2026-09-07); the device accepted it, wiped userdata, and returned to fastboot. The recovery flash is being retried once the post-wipe bootloader settles (it temporarily stopped answering fastboot commands while formatting — only `fastboot devices`, a host-side query, responded).
+- A minimal diagnostic initramfs now exists: `initramfs/init` brings up a configfs USB composite gadget (serial shell, NCM/ECM/RNDIS network with DHCP+telnet, read-only log LUN) and dumps full boot diagnostics; `scripts/build_diag_initramfs.sh` packs it deterministically (pinned Debian arm64 busybox-static); `scripts/build_diag_boot.sh` wraps `repack_signed_boot.sh` into a signed diag boot image. First signed diag image: 15,107,368 bytes, SHA-256 `ffc34ec22638bb36e9df7d96ccfc8f480aaa1e4bc9f7b79edb48787e2f7c518f`, valid NX563J signature.
+- The downstream workflow accepts an optional `config_fragment`; `config/downstream-usb-diag.fragment` enables devtmpfs and USB gadget serial/ACM/RNDIS/ECM so the diag kernel offers more channels than the stock defconfig (which lacks gadget serial/RNDIS and devtmpfs).
 - CI now pins exact kernel source revisions and records resolved source commits in new artifacts: downstream `cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6`, 6.0-oriented bridge `a07b78d3526376cfb8ef136bd0fa279163ac5e3f`.
 
 ## Fixed target
@@ -53,18 +55,18 @@ Not first-stage blockers: camera, calls, VoLTE, full Android hardware parity.
 
 ## Current blocker
 
-The NX563J bootloader neither supports non-writing `fastboot boot` nor accepts `fastboot flash` in its current state (`Nubia fastboot unlocked: false`). Running any custom image on hardware requires either the documented `fastboot oem nubia_unlock NUBIA_NX563J` (expected userdata factory reset) or EDL/9008 flashing. This is a user decision; software-side preparation continues meanwhile.
+None structural: the Nubia flash gate has been opened with the user-authorized `nubia_unlock` (userdata was wiped, as expected and accepted). The immediate work is flashing the signed smoke/diag images to `recovery` and observing the first replacement-kernel boot. The NX563J fastboot interface is flaky (froze twice; needed power cycles), so fastboot sessions must stay short.
 
 ## Next device-side actions
 
-1. User decides between `nubia_unlock` (wipes userdata) and the EDL path (no wipe, needs a verified MSM8998 firehose programmer).
-2. Once flashing is possible: flash the deterministic signed smoke image (`fc54ae2e...bf2a87`) to `recovery`, boot it via `adb reboot recovery`, and capture diagnostics (screen state, ADB reappearance, USB enumeration).
-3. Keep fastboot sessions short — the NX563J fastboot interface froze once after several commands and needed a power cycle.
+1. Re-flash the deterministic signed smoke image (`fc54ae2e...bf2a87`) to `recovery` now that the flash gate is open.
+2. Boot into recovery (hardware keys: Volume Up + Power; adb is unavailable until Android is set up again post-wipe) and observe whether the 4.4.302 kernel executes.
+3. Flash the signed diagnostic initramfs image (`ffc34ec2...` or a rebuild with the diag kernel) and capture diagnostics over USB gadget serial/network.
+4. Keep fastboot sessions short — the NX563J fastboot interface froze twice and needed power cycles.
 
 ## Next software actions
 
-- Build a minimal diagnostic initramfs (busybox `/init`, devtmpfs, block/USB-gadget diagnostics) as the first Linux userspace.
-- Establish a screen-independent diagnostic channel, prioritizing USB gadget serial/network over UART and pstore.
+- Run the downstream CI with `config/downstream-usb-diag.fragment` to produce the gadget-serial/RNDIS-enabled diag kernel, then rebuild the diag boot image with it.
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
