@@ -1,0 +1,68 @@
+name: Build downstream NX563J kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Kernel branch/tag
+        required: true
+        default: lineage-22.2
+      defconfig:
+        description: Kernel defconfig
+        required: true
+        default: lineageos_nx563j_defconfig
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             bc bison build-essential ccache curl flex git libelf-dev             libssl-dev python3 unzip wget xz-utils zip
+
+      - name: Download Android toolchains
+        run: |
+          mkdir -p work/toolchains/clang work/toolchains/gcc64 work/toolchains/gcc32
+          wget -q             https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r450784d.tar.gz             -O work/clang.tar.gz
+          tar -xzf work/clang.tar.gz -C work/toolchains/clang
+
+          wget -q             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz             -O work/gcc64.tar.gz
+          tar -xzf work/gcc64.tar.gz -C work/toolchains/gcc64
+
+          wget -q             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz             -O work/gcc32.tar.gz
+          tar -xzf work/gcc32.tar.gz -C work/toolchains/gcc32
+
+      - name: Clone LineageOS kernel
+        run: |
+          git clone --depth=1 --branch "${{ inputs.kernel_ref }}"             https://github.com/LineageOS/android_kernel_nubia_msm8998.git             work/kernel
+
+      - name: Configure
+        working-directory: work/kernel
+        run: |
+          export PATH="$GITHUB_WORKSPACE/work/toolchains/clang/bin:$PATH"
+          make -j"$(nproc)" O=out ARCH=arm64             CLANG_TRIPLE=aarch64-linux-gnu-             CROSS_COMPILE="$GITHUB_WORKSPACE/work/toolchains/gcc64/bin/aarch64-linux-android-"             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CROSS_COMPILE_COMPAT="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1             "${{ inputs.defconfig }}"
+
+      - name: Build
+        working-directory: work/kernel
+        run: |
+          export PATH="$GITHUB_WORKSPACE/work/toolchains/clang/bin:$PATH"
+          make -j"$(nproc)" O=out ARCH=arm64             CLANG_TRIPLE=aarch64-linux-gnu-             CROSS_COMPILE="$GITHUB_WORKSPACE/work/toolchains/gcc64/bin/aarch64-linux-android-"             CROSS_COMPILE_ARM32="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CROSS_COMPILE_COMPAT="$GITHUB_WORKSPACE/work/toolchains/gcc32/bin/arm-linux-androideabi-"             CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts/downstream
+          cp work/kernel/out/arch/arm64/boot/Image.gz-dtb artifacts/downstream/
+          cp work/kernel/out/.config artifacts/downstream/kernel.config
+          find work/kernel/out/arch -type f -name '*NX563J*.dtb' -exec cp {} artifacts/downstream/ \; || true
+          sha256sum artifacts/downstream/* | tee artifacts/downstream/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nx563j-downstream-${{ inputs.kernel_ref }}
+          path: artifacts/downstream/
+          if-no-files-found: error

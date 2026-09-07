@@ -1,0 +1,54 @@
+name: Build mainline-oriented NX563J kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source branch/tag
+        required: true
+        default: master
+      defconfig:
+        description: Kernel defconfig
+        required: true
+        default: nx563j_oh_defconfig
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross-build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             bc bison build-essential device-tree-compiler flex gcc-aarch64-linux-gnu             libelf-dev libssl-dev python3 rsync
+
+      - name: Clone existing NX563J mainline-oriented tree
+        run: |
+          git clone --depth=1 --branch "${{ inputs.source_ref }}"             https://github.com/LemonFan-maker/MSM8998-OH-KERNEL-6.0.git             work/kernel
+
+      - name: Configure
+        working-directory: work/kernel
+        run: |
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- "${{ inputs.defconfig }}"
+
+      - name: Build kernel and DTBs
+        working-directory: work/kernel
+        run: |
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image.gz dtbs
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts/mainline
+          cp work/kernel/arch/arm64/boot/Image.gz artifacts/mainline/
+          cp work/kernel/.config artifacts/mainline/kernel.config
+          find work/kernel/arch/arm64/boot/dts/qcom -type f             \( -name 'msm8998-nubia-nx563j.dtb' -o -name '*nx563j*.dtb' \)             -exec cp {} artifacts/mainline/ \;
+          sha256sum artifacts/mainline/* | tee artifacts/mainline/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nx563j-mainline-oriented
+          path: artifacts/mainline/
+          if-no-files-found: error

@@ -1,0 +1,7 @@
+.DS_Store
+artifacts/
+work/
+backups/
+*.img
+*.bin
+*.log
