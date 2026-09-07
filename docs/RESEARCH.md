@@ -107,3 +107,22 @@ The connected device confirms several assumptions from public trees:
 - boot/recovery/recovery2 are separate 64 MiB partitions on UFS LUN `sde`
 
 The phone currently runs an older Nubia Android 10 stack with kernel `4.4.194-perf+`, so the LineageOS 4.4.302 branch is also a useful modernization step even before switching kernel families.
+
+
+## Recovery / bootloader path
+
+Official TWRP currently lists Nubia Z17 / NX563J as supported and documents the Nubia-specific bootloader command:
+
+`fastboot oem nubia_unlock NUBIA_NX563J`
+
+The connected phone currently reports `ro.boot.flash.locked=1`, so the project must treat bootloader unlocking as a future destructive transition, not as an inventory step.
+
+Before any unlock operation:
+
+1. keep the current boot/recovery/recovery2 images and their hashes;
+2. back up user data that must survive a factory reset;
+3. enter fastboot only to inspect device/bootloader variables first;
+4. verify whether `fastboot boot <image>` is accepted before writing a partition;
+5. only unlock if the Linux test path actually requires it and the data-loss implications are accepted.
+
+Current public install documentation also confirms `Volume Down + Power` as the bootloader/fastboot key combination for NX563J.
