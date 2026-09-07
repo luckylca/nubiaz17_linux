@@ -2,6 +2,21 @@
 
 Last updated: 2026-09-07
 
+> **Current authoritative status:** the live inventory, backups, both kernel CI paths, and signed boot repacking are already complete. Any older "current blocker" or "next action" text further down that says these are still pending is superseded by this section.
+
+## Current authoritative status
+
+- Full 64 MiB read-only backups of `boot`, `recovery`, and `recovery2` are captured and hashed under the gitignored Mac backup directory.
+- The existing NX563J Linux 6.0-oriented bridge builds successfully in GitHub Actions.
+- LineageOS 4.4.302 downstream also builds successfully; run `34090477218` produced a verified `Image.gz-dtb` artifact.
+- The downstream build uses Linux `4.4.302-perf+` with Android Clang r450784d / Clang 14.0.6.
+- `scripts/repack_signed_boot.sh` is committed and reproduces the original signed boot active image bit-for-bit when given the original kernel and ramdisk.
+- The first kernel-only signed smoke image is generated and statically verified: `nx563j-lineage-22.2-kernel-only-smoke-signed.img`, size `15,426,856` bytes, SHA-256 `75b02e992020d501ae51c03791c4fdbd68958211626666c57aeb4cbe849305c4`.
+- That smoke image has a valid Android `/boot` signature; its unpacked kernel exactly matches the verified CI `Image.gz-dtb`, and its ramdisk exactly matches the baseline Android boot ramdisk.
+- No device partition write, unlock, or flash has been performed.
+- The phone is currently absent from ADB/fastboot, so the next device milestone is a read-only fastboot-state inspection followed, if accepted, by non-writing `fastboot boot <signed-image>`.
+- CI now pins exact kernel source revisions and records resolved source commits in new artifacts: downstream `cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6`, 6.0-oriented bridge `a07b78d3526376cfb8ef136bd0fa279163ac5e3f`.
+
 ## Fixed target
 
 Device: Nubia Z17 / NX563J  
