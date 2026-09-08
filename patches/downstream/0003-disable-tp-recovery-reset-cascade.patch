@@ -1,0 +1,20 @@
+diff --git a/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_i2c.c b/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_i2c.c
+index be347743..f19dcaad 100755
+--- a/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_i2c.c
++++ b/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_i2c.c
+@@ -83,6 +83,15 @@ static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
+ 		else
+ 			bdata->tp_recovery_enable = false;
+ 	}
++	/*
++	 * NX563J: the tp recovery reset-work cascade hardware-resets the
++	 * in-cell touch IC (reset_gpio low 10 ms) on any transient I2C NAK.
++	 * Each reset restarts the IC's long post-boot settling window and
++	 * the 0.5 s retry loop never lets it finish, so one NAK wedges
++	 * touch for minutes. The IC recovers on its own when left alone,
++	 * so disable the recovery path entirely.
++	 */
++	bdata->tp_recovery_enable = false;
+ 	pr_err("[TP]%s: tp-recovery-enable = %d\n", __func__, bdata->tp_recovery_enable);
+ 
+ 	retval = of_property_read_u32(np, "synaptics,irq-on-state",
