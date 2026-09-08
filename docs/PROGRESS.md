@@ -71,6 +71,18 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
+## 2026-09-08 touch fixed: full multi-touch events on nubia_synaptics_dsx
+
+**Touch is working — user touch produced a live stream of MT events (982 log lines: tracking IDs, BTN_TOUCH, X/Y, pressure) on `/dev/input/event4`.**
+
+The root cause was three stacked bugs, fixed by three patches (all in `patches/downstream/`, details in `docs/RESEARCH.md`):
+
+1. **IC settling window** (~15-20 s after boot): `0002-touch-resume-delay-until-ic-ready.patch` defers the driver's resume until t=20 s.
+2. **Recovery cascade**: the driver's `tp_recovery` path GPIO-resets the IC on transient NAKs, each reset restarting the settling window: `0003-disable-tp-recovery-reset-cascade.patch` forces `tp_recovery_enable = false`.
+3. **Empty fn-handler list + razor-thin retry window**: resume's `reset_device` empties the function-handler list, then the re-query races the still-settling IC and loses within `SYN_I2C_RETRY_TIMES=3` (~60 ms): `0004-widen-i2c-retry-window.patch` widens it to 10 (~200 ms), and `0002` rebuilds the fn list if a resume still ends up empty.
+
+Verified on `nx563j-diag-touch5-signed.img` (all four patches): `resume workqueue finish (IC alive)` on **attempt 1** at t=20.5 s (3 I2C retries, no fn-list rebuilds), then real user touches produce proper MT-B event streams. New on-device tool `tools/touchdump/` (errno-reporting evdev reader) used for capture.
+
 ## 2026-09-08 touch root cause found, fix building in CI
 
 - Symptom: touch IC (in-cell Synaptics RMI4) probes OK at ~1.5 s, then NAKs all I2C from ~1.9 s forever (all rails verified on, all addresses dead).
