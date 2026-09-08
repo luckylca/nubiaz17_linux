@@ -71,6 +71,23 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
+## 2026-09-08 Wi-Fi works: wlan0 up, 2.4/5 GHz scan finds 11 networks
+
+**WCN3990 is fully up under Linux: `wlan0` + `wlan1` + `p2p0` created by qcacld v5.1.1.77V, and `wpa_supplicant` scans return 11 BSSIDs on both bands (own AP `luckyy_5G` at -29 dBm).**
+
+The bring-up recipe is `tools/wifi-bringup/wifi-bringup4.sh` (proven end-to-end on three consecutive modem cycles). The chain: perms fix → mounts incl. persist → firmware staging in both fs roots → irsc → IPA uC load → QMI daemons with working RFS → modem boot → QMI_IPA_INIT → `wlan_pd` servreg indication → `WLAN FW is ready` → qcacld probe → wlan0.
+
+Four root causes were fixed this session (details in `docs/RESEARCH.md`):
+
+1. **pd-mapper crash-loop**: mdev leaves `/dev/null`/`/dev/urandom` 0660 root:root (and `/dev/null` was once a 35-byte regular file); pd-mapper runs as uid 1000 → fix perms before any daemon.
+2. **No QMI_IPA_INIT without the IPA uC** (v3 "no uC like stock" experiment disproven): on MSM8998/GSI, `ipa3_post_init` is deferred until `ipa_fws` loads via a `/dev/ipa` write; only then does rmnet register its QMI service and send `QMI_IPA_INIT_MODEM_DRIVER_REQ` when the modem's IPA_Q6 (0x31) service arrives.
+3. **The wlan_pd gate — tftp RFS**: the modem boots fine and answers QMI_IPA_INIT, but never starts `wlan_pd` unless its RFS write check (`/vendor/rfs/msm/mpss/readwrite/server_check.txt`, a symlink into `/mnt/vendor/persist/rfs/...`) succeeds. Mounting persist (`/dev/sda2`, RW) before `tftp_server` starts unblocked it: `Indication received from msm/modem/wlan_pd, state: 0x1fffffff` (stock-identical), `icnss: QMI Server Connected: state: 0x981`.
+4. **qcacld ini hang**: `hdd_parse_config_ini`'s `request_firmware("wlan/qca_cld/WCNSS_qcom_cfg.ini")` runs on a kernel workqueue whose fs root is the **initramfs**, not the chroot — the file must exist under `/proc/1/root/fwimage/` too, or the request falls into the unanswered usermode-helper, hangs 120 s+, and the FW watchdog fails the probe (-22).
+
+Supporting tooling: `tools/logcatd/logcatd.c` (fake logd: binds `/dev/socket/logdw`, dumps bionic liblog to `/var/log/logcatd.log`). Modem bounce without reboot: `kill -9` the holder of `/dev/subsys_modem` (pm-service); its keepalive re-boots the modem and the whole wlan chain re-runs.
+
+Remaining for Wi-Fi: associate to a real AP (needs credentials), DHCP, then throughput test.
+
 ## 2026-09-08 touch fixed: full multi-touch events on nubia_synaptics_dsx
 
 **Touch is working — user touch produced a live stream of MT events (982 log lines: tracking IDs, BTN_TOUCH, X/Y, pressure) on `/dev/input/event4`.**

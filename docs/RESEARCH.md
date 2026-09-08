@@ -494,3 +494,89 @@ Chain discovered from stock dmesg ground truth + live experiments:
    (`system/apex/com.android.runtime.release`), reachable by
    bind-mounting it at `/apex/com.android.runtime` and sda9's
    `system/` at `/system`.
+
+## 2026-09-08 Wi-Fi part 2: wlan0 UP — full chain root-caused
+
+End state: `wlan0`/`wlan1`/`p2p0` exist, scan works on both bands.
+Recipe: `tools/wifi-bringup/wifi-bringup4.sh`. Stock-comparison ground
+truth in `artifacts/stock-wlan-probe-2026-09-08/dmesg-nx563j.txt`.
+
+Observed stock timeline (t in s): ADSP connect 17.61 → modem out of
+reset 19.58 → servreg 180-connect 19.83 → QMI_IPA_INIT req 20.01 →
+"not send indication" 20.086 → uC WDI/NTN event-log handlers 20.091 →
+resp 20.094 → Server 00001002 rejected 20.12 → **wlan_pd indication
+state 0x1fffffff 20.52** → `icnss: QMI Server Connected: 0x981` 20.52
+→ FW ready 23.16 → rmnet_data* register 21.16+.
+
+Root causes fixed (in order found):
+
+1. **/dev perms**: mdev leaves `/dev/null` `/dev/random` `/dev/urandom`
+   0660 root:root; `/dev/null` was once a 35-byte regular file (a
+   redirect ran before the node existed). pd-mapper (uid 1000)
+   crash-loops on `/dev/urandom` EACCES, killing the whole
+   service-locator chain (icnss's one-shot `init_service_locator`
+   300 s timeout dies at -62 if pd-mapper is late). Fix:
+   `mknod`/`chmod 0666` before any daemon. Verified by kprobe:
+   `icnss_get_service_location_notify` fires with
+   `msm/modem/wlan_pd` instance 180 (stock-identical), so pd-mapper's
+   answer was always correct — the failures were all environmental.
+2. **IPA uC is required on this kernel** (v3 "stock never loads uC"
+   experiment disproven): MSM8998 is IPA 3.0/GSI, so
+   `ipa3_plat_drv_probe` does NOT call `ipa3_post_init`; only the
+   `/dev/ipa` write path (`ipa3_pil_load_ipa_fws` → queue
+   `ipa3_post_init_work`) completes `init_completion_obj` and fires
+   the ipa-ready callbacks. rmnet_ipa's probe blocks in
+   `ipa_register_ipa_ready_cb` until then, so `ipa3_qmi_service_init`
+   never runs → no `qmi_svc_event_notifier_register(0x31,...)` →
+   `ipa3_q6_clnt_svc_arrive` never sends
+   `QMI_IPA_INIT_MODEM_DRIVER_REQ_V01`. Live symptom: ipacm stuck
+   120 s+ in `ipa3_ioctl: "IPA not ready, waiting for init
+   completion"`. Stock DOES load the uC (its dmesg shows the uC
+   event-log handlers answering the modem at 20.09).
+3. **tftp RFS gates wlan_pd** (THE wlan_pd blocker): with the QMI_IPA
+   handshake stock-identical, the modem still never started wlan_pd —
+   no servreg indication, no WLFW service 0x45 in
+   `msm_ipc_router/dump_servers`. Cause: `tftp_server` couldn't create
+   its RFS dirs — `/vendor/rfs/msm/mpss/readwrite` is a symlink to
+   `/mnt/vendor/persist/rfs/msm/mpss`, and persist (`/dev/sda2`, ext4,
+   already populated: `WCNSS_qcom_cfg.ini`, `bluetooth/`, `rfs/`,
+   uid 2903) was never mounted. The modem's boot-time RFS write check
+   (`server_check.txt`) failed with ENOENT. Mounting persist RW +
+   restarting tftp_server + bouncing the modem produced the
+   stock-identical indication 0.7 s after EFS reads.
+4. **qcacld ini load runs in initramfs fs context**:
+   `hdd_wlan_startup` → `hdd_parse_config_ini` →
+   `request_firmware("wlan/qca_cld/WCNSS_qcom_cfg.ini")` executes on
+   `icnss_driver_event_work` (kworker → kthreadd → initramfs root).
+   Files staged only in the chroot `/fwimage` are invisible; the
+   request falls back to the usermode helper
+   (`/sys/class/firmware/wlan!qca_cld!WCNSS_qcom_cfg.ini`, loading=0,
+   no ueventd to answer), hangs 120 s, the FW watchdog then fails the
+   probe: `icnss: Driver probe failed: -22`. Fix: stage
+   `wlan/qca_cld/{WCNSS_qcom_cfg.ini,wlan_mac.bin}` (from
+   `/vendor/firmware/wlan/qca_cld/`) under `/proc/1/root/fwimage/` as
+   well.
+
+Operational notes:
+
+- Fake logd `tools/logcatd/logcatd.c` binds `/dev/socket/logdw`
+  (SOCK_DGRAM) and parses the 24-byte `{id,tid,sec,nsec,uid,pid}`
+  header + `[prio][tag\0][msg\0]` payload — bionic daemons
+  (tftp_server, netmgrd, cnss-daemon, time_daemon) become observable.
+- Modem bounce without reboot: scan `/proc/*/fd/*` for
+  `/dev/subsys_modem`, `kill -9` the holder (usually pm-service; the
+  script's own hold pid in `/tmp/modem.hold.pid` is a setsid parent,
+  not the fd holder). MSS shuts down (`AFTER_SHUTDOWN`), the
+  keepalive restarts pm-service, modem re-boots, whole wlan chain
+  re-runs. `SIGTERM` is ignored by pm-service; use `kill -9`.
+- pm-service (not the script) ends up holding `/dev/subsys_modem`
+  once running; that is fine and stock-like.
+- `icnss` unbind/bind does NOT re-probe (penv singleton survives
+  remove → `-EEXIST Driver is already initialized`); use a modem
+  bounce instead.
+- `wpa_supplicant -B -i wlan0 -D nl80211` works from the Alpine
+  rootfs; `wpa_cli scan/scan_results` verified (11 networks).
+- ipacm loops `ipa3_setup_sys_pipe: EP 3 already allocated` /
+  `handle3_egress_format failed` every 3 s — harmless for Wi-Fi
+  (it's the WWAN offload path), present on all runs.
+
