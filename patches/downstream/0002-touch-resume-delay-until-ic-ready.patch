@@ -1,8 +1,8 @@
 diff --git a/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_core.c b/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_core.c
-index 56b248de..5cdf80ed 100755
+index 56b248de..59b18399 100755
 --- a/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_core.c
 +++ b/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_core.c
-@@ -5271,11 +5271,44 @@ static void resume_work_func(struct work_struct *work)
+@@ -5271,11 +5271,59 @@ static void resume_work_func(struct work_struct *work)
  	struct synaptics_rmi4_data *rmi4_data =
  		container_of(work, struct synaptics_rmi4_data,
  			resume_work);
@@ -36,14 +36,29 @@ index 56b248de..5cdf80ed 100755
 +		synaptics_rmi4_resume(dev);
 +		ret = synaptics_rmi4_reg_read(rmi4_data,
 +				rmi4_data->f01_query_base_addr, &probe_byte, 1);
-+		if (ret >= 0) {
-+			dev_info(dev, "resume workqueue finish (IC alive)\n");
-+			return;
++		if (ret < 0) {
++			dev_err(dev, "[TP]touch IC still NAK after resume, cycling rails\n");
++			msleep(4000);
++			synaptics_rmi4_suspend(dev);
++			msleep(1000);
++			continue;
 +		}
-+		dev_err(dev, "[TP]touch IC still NAK after resume, cycling rails\n");
-+		msleep(4000);
-+		synaptics_rmi4_suspend(dev);
-+		msleep(1000);
++		/*
++		 * The reset that synaptics_rmi4_resume() always issues
++		 * empties the function handler list and re-queries the IC;
++		 * when that query races the IC's own reboot the list stays
++		 * empty and touch silently never reports again (irqs fire
++		 * but there is no F12 handler). Rebuild it now that the IC
++		 * is settled.
++		 */
++		if (list_empty(&rmi4_data->rmi4_mod_info.support_fn_list)) {
++			dev_err(dev, "[TP]IC alive but fn list empty, rebuilding\n");
++			synaptics_rmi4_reset_device(rmi4_data, false);
++			msleep(1000);
++			continue;
++		}
++		dev_info(dev, "resume workqueue finish (IC alive)\n");
++		return;
 +	}
 +	dev_err(dev, "resume workqueue finish (IC dead after %d attempts)\n",
 +			attempt);
