@@ -418,3 +418,79 @@ Operational hazards discovered (avoid):
 Stock reference dumps: `artifacts/stock-android-probe-2026-09-08/`
 (dmesg-stock-early.txt = full early boot, dmesg-stock.txt, regulators,
 interrupts).
+
+## 2026-09-08 touch part 2: two more stacked bugs (cascade + empty fn list)
+
+The "early poke kills the IC" theory from the first analysis was
+disproved by the deferred-resume experiment: with all I2C blocked until
+t=20 s the IC still NAK'd at 20 s, and separately it survived untouched
+from t=1.5 s to t=1312 s in another boot. The real failure chain has
+three stacked layers, each unmasked in turn:
+
+1. **Settling window (real)**: first contact before ~15-20 s NAKs;
+   stock's first contact is at 17-18.5 s. Patch 0002 defers the fb-event
+   resume to t>=20 s (`ktime_get_seconds()`, not jiffies — those start
+   at -300*HZ).
+2. **tp recovery cascade (destructive)**: on the last retry of any
+   failed I2C read, the driver schedules `tp_reset_work`, which pulses
+   the touch IC **reset GPIO**. Each GPIO reset restarts the IC's long
+   settling window; the 0.5 s retry loop never lets it finish, so one
+   transient NAK wedged touch for minutes or until reboot. The IC
+   self-recovers whenever the loop leaves it alone (observed: dead
+   20.6 s -> alive ~240 s; dead 3540 s -> alive ~3620 s; dead 3763 s ->
+   alive ~3812 s — each time after the loop's >10-count cap gave it a
+   quiet window). Patch 0003 forces `tp_recovery_enable = false` in
+   `parse_dt`.
+3. **Empty function-handler list (silent)**: `synaptics_rmi4_resume()`
+   always ends with `reset_device()`, which **empties** the RMI4
+   function handler list and re-queries the IC. When that query races
+   the IC's own post-reset reboot (happened at t=20.5 s), the list
+   stays empty forever: the IC is fully alive (ic_detect=1, firmware_id
+   reads, 10 s cs2 polls succeed, attn irqs fire on every touch) but
+   there is no F12 handler, so no input events are ever reported.
+   Patch 0002 now also verifies `support_fn_list` is non-empty after
+   the alive-check and rebuilds it with `reset_device()` once the IC
+   is settled.
+
+Debugging notes: musl `od`/`cat` on /dev/input/eventN exit with a bare
+"read error" while the driver is in its wedged state (works fine when
+healthy) — use `tools/touchdump/touchdump.c` (errno-reporting reader).
+`pkill -f <pattern>` inside an ssh remote command matches the sshd
+shell's own cmdline — kill by exact pid or use bracket globs.
+
+## 2026-09-08 Wi-Fi: WCN3990 boots via modem subsystems (bring-up recipe)
+
+Chain discovered from stock dmesg ground truth + live experiments:
+
+1. qcacld is built-in but defers all init until userspace writes
+   `ON` to `/dev/wlan` (the `qcwlanstate` char device, major 226).
+   Even then, the icnss driver only probes qcacld once the **WLAN
+   firmware** signals FW_READY over QMI.
+2. The WCN3990 firmware runs as protection domain `wlan_pd` **under the
+   modem** (`service-notifier: ... msm/modem/wlan_pd`). Stock boots the
+   modem at t~19 s via the vendor peripheral manager; nothing boots it
+   in a bare Linux userspace.
+3. Opening and **holding** `/dev/subsys_modem` boots the modem
+   (`subsys_device_open` -> `subsystem_get_with_fwname` -> PIL). Hold
+   it open (refcounted; close = shutdown). Modem firmware files
+   (mba.mbn, modem.b**) load via `firmware_class.path=/vendor/firmware_mnt/image`
+   — works when the open() happens in the chroot context where that
+   path exists on the rootfs.
+4. With no ueventd, each missing firmware (msadp debug policy) costs
+   one ~60 s user-helper timeout before the PIL continues — harmless,
+   just slow. Confirmed full boot: `MBA boot done` -> `Brought out of
+   reset` -> `Power/Clock ready` -> SSCTL QMI connected.
+5. **Hazard: the modem boots, then ~30-90 s later the device hard-
+   reboots** (silent, no panic output) — consistent with a modem fatal
+   escalated by SSR at restart_level `system`. Probably missing
+   userspace QMI peers (rmtfs/EFS; kernel has no CONFIG_QRTR). SSR
+   restart levels are writable per-subsystem under
+   `/sys/bus/msm_subsys/devices/subsys_*/restart_level`
+   (`system`/`related`/`independent`) — set `related` before
+   experimenting to survive modem crashes.
+6. Stock bionic userspace (pm-service, pd-mapper) is runnable in
+   principle: vendor partition (sde41) has the daemons; bionic
+   linker/libc live in the runtime APEX on sda9
+   (`system/apex/com.android.runtime.release`), reachable by
+   bind-mounting it at `/apex/com.android.runtime` and sda9's
+   `system/` at `/system`.

@@ -1,0 +1,13 @@
+diff --git a/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_i2c.c b/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_i2c.c
+index be347743..2347bc78 100755
+--- a/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_i2c.c
++++ b/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_i2c.c
+@@ -43,7 +43,7 @@
+ #include "synaptics_dsx.h"
+ #include "synaptics_dsx_core.h"
+ 
+-#define SYN_I2C_RETRY_TIMES 3
++#define SYN_I2C_RETRY_TIMES 10
+ 
+ /*
+ #define I2C_BURST_LIMIT 255
