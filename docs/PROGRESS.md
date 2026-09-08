@@ -71,9 +71,9 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
-## 2026-09-08 Wi-Fi works: wlan0 up, 2.4/5 GHz scan finds 11 networks
+## 2026-09-09 Wi-Fi works: wlan0 up, associated, internet verified
 
-**WCN3990 is fully up under Linux: `wlan0` + `wlan1` + `p2p0` created by qcacld v5.1.1.77V, and `wpa_supplicant` scans return 11 BSSIDs on both bands (own AP `luckyy_5G` at -29 dBm).**
+**WCN3990 is fully up under Linux and online: `wlan0`/`wlan1`/`p2p0` created by qcacld v5.1.1.77V, scan finds 11 networks on both bands, association to the user's 5 GHz WPA2 AP succeeds, DHCP lease `192.168.1.186/24` from `192.168.1.1`, gateway/DNS/internet ping all 0% loss, HTTP download verified (busybox wget https needs a cert bundle — rootfs detail, not Wi-Fi).** wpa_supplicant config persists in the rootfs (`update_config=1`, network entry saved via wpa_cli; credentials intentionally not committed to git).
 
 The bring-up recipe is `tools/wifi-bringup/wifi-bringup4.sh` (proven end-to-end on three consecutive modem cycles). The chain: perms fix → mounts incl. persist → firmware staging in both fs roots → irsc → IPA uC load → QMI daemons with working RFS → modem boot → QMI_IPA_INIT → `wlan_pd` servreg indication → `WLAN FW is ready` → qcacld probe → wlan0.
 
@@ -86,7 +86,7 @@ Four root causes were fixed this session (details in `docs/RESEARCH.md`):
 
 Supporting tooling: `tools/logcatd/logcatd.c` (fake logd: binds `/dev/socket/logdw`, dumps bionic liblog to `/var/log/logcatd.log`). Modem bounce without reboot: `kill -9` the holder of `/dev/subsys_modem` (pm-service); its keepalive re-boots the modem and the whole wlan chain re-runs.
 
-Remaining for Wi-Fi: associate to a real AP (needs credentials), DHCP, then throughput test.
+Remaining for Wi-Fi: nothing hardware-side. Rootfs polish: TLS cert bundle for wget/https, `iw` package, auto-associate service from rc.boot.
 
 ## 2026-09-08 touch fixed: full multi-touch events on nubia_synaptics_dsx
 
