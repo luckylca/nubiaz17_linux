@@ -352,3 +352,69 @@ Operational footgun: `pkill -f "fbtest ..."` inside an ssh remote command
 matches the sshd-spawned shell's own cmdline and kills the session (and
 the newly started replacement). Use exact pgrep/pkill patterns or kill by
 pid.
+
+## 2026-09-08 touch investigation (Synaptics RMI4, in-cell) — root cause + fix in CI
+
+Symptom on our kernel: `nubia_synaptics_dsx` probes OK at t≈1.5 s (reads
+firmware id 3056304, registers input4), then **every I2C transaction from
+t≈1.9 s onward NAKs** (`i2c-msm-v2: NACK: slave not responding` → -107
+ENOTCONN), IRQ count stays 0, evdev reads return EIO, and the driver falls
+into a "spontaneous reset detected" loop every ~0.6 s that never recovers.
+
+Ruled out (all verified on the live device):
+
+- Power: pm8998_l14 (vdd_lcd), l28 (vdd_ana), l6 (vcc_i2c), lab_reg and
+  ibb_reg (5.5 V panel bias) all ENABLED with correct voltages and
+  registered consumers. `Regulator lcd_reg is null` also prints on stock —
+  red herring (that message is about the platform-device path; the I2C
+  client supplies are claimed fine).
+- `regulator_proxy_consumer_remove_all` timing: stock 1.99 s, ours 1.72 s —
+  in BOTH cases after the touch probe registered its regulator votes.
+- Firmware update leaving the IC in bootloader mode: no synaptics firmware
+  file exists anywhere in stock's firmware paths and fwu is only triggered
+  via sysfs (at t=17 s by Android userspace, ending in "Bootloader version
+  mismatch" = no-op). Not the cause.
+- `nubia_wakeup_gesture`: 0 by default on both.
+- Full driver-managed rail cycle (fb blank 4 → 0) once: still NAK
+  afterwards — but note l14 is shared with the panel, so the IC never got
+  a TRUE full power cut that way.
+
+Ground truth from stock Android (Magisk root, early dmesg captured by
+rebooting and pulling dmesg the moment adbd appears — the ring wraps by
+~19 s due to audit spam):
+
+- Stock touch probe at 1.76 s, then **zero touch I2C until t=17 s**
+  (fwu poke from userspace) and the fb-event resume at **t=18.5 s**, which
+  succeeds after 2 retries ("retry 1, retry 2, resume workqueue finish").
+- On OUR kernel the fb unblank fires at t≈1.9 s → resume pokes the IC
+  ~1.9 s after boot → all reads NAK past the 3-retry limit → failed
+  `reset_device` + the 0.6 s reset loop → IC never comes up.
+- On an earlier diag boot (no early fb client), the first touch resume
+  happened at **t=1312 s and SUCCEEDED after a few retries** — proving
+  late first contact works and early first contact kills.
+- Conclusion: the in-cell IC needs a settling window after boot; an early
+  first poke (and the ensuing reset loop) leaves it permanently NAK until
+  a real power cut.
+
+Fix: `patches/downstream/0002-touch-resume-delay-until-ic-ready.patch` —
+defers fb-notifier resumes until 20 s after boot, verifies the IC answers
+on f01 afterwards, and on continued NAK cycles rails through suspend and
+retries the full resume (8 × 5 s). CI applies all patches in
+patches/downstream/ (sorted) and tags multi-patch artifacts `-patches`.
+Push-triggered build, no gh auth needed.
+
+Operational hazards discovered (avoid):
+
+- Reading `/sys/kernel/debug/gpio` or regulator `consumers` debugfs while
+  the touch driver is in its reset loop HANGS the reader in D state; the
+  pileup wedges normal `reboot` (device_shutdown blocks on the stuck
+  driver) — recover with `echo b > /proc/sysrq-trigger` (telnet fallback
+  shell from the initramfs stays alive; dropbear may stop accepting).
+- `unbind`/`bind` of `5-0020` after a long wedged period re-probes but
+  deadlocks in `synaptics_creat_tpnode` (tpnode_class EEXIST from the
+  first probe) — do not rebind this driver; reboot instead.
+- A hung watchdog reboot can follow such D-state pileups.
+
+Stock reference dumps: `artifacts/stock-android-probe-2026-09-08/`
+(dmesg-stock-early.txt = full early boot, dmesg-stock.txt, regulators,
+interrupts).

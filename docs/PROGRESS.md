@@ -71,6 +71,13 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
+## 2026-09-08 touch root cause found, fix building in CI
+
+- Symptom: touch IC (in-cell Synaptics RMI4) probes OK at ~1.5 s, then NAKs all I2C from ~1.9 s forever (all rails verified on, all addresses dead).
+- Root cause (proven against stock Android early dmesg): the IC needs a settling window after boot. Stock's first touch I2C is at ~17-18 s and succeeds; our kernel's fb unblank pokes it at ~1.9 s and the driver's reset loop then keeps it dead. A late first contact (t=1312 s on an earlier boot) succeeds — so the fix is timing, not power or firmware.
+- `patches/downstream/0002-touch-resume-delay-until-ic-ready.patch` (defer resume to 20 s, verify IC, rail-cycle retry) is building in CI now (push-triggered, artifact tagged `-patches`).
+- Full analysis + newly discovered operational hazards (debugfs/gpio hangs, unbind deadlock, sysrq-b recovery) in `docs/RESEARCH.md`.
+
 ## 2026-09-08 display works: Linux draws on the JDI R63452 panel
 
 **The screen shows Linux-drawn content (red/green/blue/white bands) at boot — user-confirmed.**
