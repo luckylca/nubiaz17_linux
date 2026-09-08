@@ -20,9 +20,9 @@ chmod 700 /root/.ssh 2>/dev/null
 # framebuffer to a long-lived holder. The fd MUST stay open or mdss
 # re-suspends the panel within a second.
 F=/sys/class/graphics/fb0
-if [ -e /dev/fb0 ] && [ -x /root/fbtest/fbtest ]; then
+if [ -e /dev/fb0 ] && [ -x /root/fbdash/fbdash ]; then
   echo 1 > $F/msm_cmd_autorefresh_en 2>/dev/null
-  nohup /root/fbtest/fbtest 999999 >/var/log/fbtest.log 2>&1 &
+  nohup /root/fbdash/fbdash >/var/log/fbdash.log 2>&1 &
   sleep 1
   echo 128 > /sys/class/leds/lcd-backlight/brightness 2>/dev/null
   echo 1500 > /sys/class/leds/wled/brightness 2>/dev/null
