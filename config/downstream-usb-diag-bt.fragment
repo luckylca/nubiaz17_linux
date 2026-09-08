@@ -1,0 +1,48 @@
+# Optional downstream config fragment for the diagnostic kernel build.
+# Enables USB gadget serial/ethernet functions and devtmpfs so the
+# diagnostic initramfs can offer a shell without a working panel.
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_USB_U_SERIAL=y
+CONFIG_USB_U_ETHER=y
+CONFIG_USB_F_SERIAL=y
+CONFIG_USB_F_ACM=y
+CONFIG_USB_F_RNDIS=y
+CONFIG_USB_F_ECM=y
+CONFIG_USB_G_SERIAL=y
+CONFIG_USB_G_NCM=y
+CONFIG_USB_CONFIGFS_SERIAL=y
+CONFIG_USB_CONFIGFS_ACM=y
+CONFIG_USB_CONFIGFS_RNDIS=y
+CONFIG_USB_CONFIGFS_ECM=y
+# NX563J Bluetooth bring-up (WCN3990 "Cherokee", HCI over BLSP1_UART3 = /dev/ttyHS0)
+#
+# Ground truth (2026-09-09, live on device):
+#   - stock Nubia 4.4.194 kernel also has CONFIG_BT_HCIUART unset: its BT
+#     stack (bluedroid) talks HCI through the wcnss_filter USERSPACE daemon
+#     reading /dev/ttyHS0 directly. For a Linux/BlueZ userspace we want the
+#     standard kernel hci0 instead -> enable the hci_uart line discipline
+#     with the QCA (IBS) protocol.
+#   - TLV rampatch/NVM download is done in userspace by the stock vendor
+#     binary hci_qcomm_init (crbtfw21.tlv + crnv21.bin from the bluetooth
+#     partition, sde22). The 4.4-era in-kernel hci_qca.c (IBS only, no TLV)
+#     is exactly right for this split.
+#   - The BT block inside the WCN3990 package is only released at chip POR
+#     when the BT rails (btpower rfkill0) are already on. Therefore
+#     wifi-bringup4.sh unblocks rfkill0 BEFORE the modem boots the chip.
+#   - Power/clock/pinctrl/UART verified stock-identical (stock DTB from
+#     backups/2026-09-07-baseline/boot.img, board v2.1); UART DM loopback
+#     passes; hci_qcomm_init completes TLV download and reads the chip MAC
+#     (00:a0:c6:c3:c9:3a) once the above POR condition is met.
+
+CONFIG_BT_HCIUART=y
+CONFIG_BT_HCIUART_H4=y
+CONFIG_BT_HCIUART_QCA=y
+
+# Useful profiles for a mini-server (stock leaves these off; we want them)
+CONFIG_BT_RFCOMM=y
+CONFIG_BT_RFCOMM_TTY=y
+CONFIG_BT_BNEP=y
+CONFIG_BT_BNEP_MC_FILTER=y
+CONFIG_BT_BNEP_PROTO_FILTER=y
+CONFIG_BT_HIDP=y
