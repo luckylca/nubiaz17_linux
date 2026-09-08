@@ -71,6 +71,14 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
+## 2026-09-09 Bluetooth: chip alive, TLV download + MAC proven; kernel fragment ready
+
+**The WCN3990 BT block answers on `/dev/ttyHS0`: `hci_qcomm_init` completes the TLV rampatch+NVM download from the `bluetooth` partition (sde22), switches to 3M baud and reads the chip MAC `00:a0:c6:c3:c9:3a`.**
+
+Root cause of the initial total UART silence (all six rails, clock, pinctrl and UART-DM loopback verified stock-identical against the decompiled stock DTB): **the BT block inside the WCN3990 package is only released at chip POR when the BT rails are already on.** Our chip POR'd with the modem boot while the btpower rfkill was still blocked. Fix: unblock rfkill0 before the modem boots (now in `wifi-bringup4.sh` step 5b), then the init succeeds on the first try.
+
+Also established: the stock Nubia kernel ships `CONFIG_BT_HCIUART` unset — stock Android talks HCI through the `wcnss_filter` userspace daemon instead. For BlueZ we want kernel `hci0`, so `config/downstream-bt.fragment` adds `CONFIG_BT_HCIUART(+H4,+QCA)` + RFCOMM/BNEP/HIDP. Remaining: CI kernel rebuild with that fragment, then `hciattach` → `hci0`.
+
 ## 2026-09-09 Wi-Fi works: wlan0 up, associated, internet verified
 
 **WCN3990 is fully up under Linux and online: `wlan0`/`wlan1`/`p2p0` created by qcacld v5.1.1.77V, scan finds 11 networks on both bands, association to the user's 5 GHz WPA2 AP succeeds, DHCP lease `192.168.1.186/24` from `192.168.1.1`, gateway/DNS/internet ping all 0% loss, HTTP download verified (busybox wget https needs a cert bundle — rootfs detail, not Wi-Fi).** wpa_supplicant config persists in the rootfs (`update_config=1`, network entry saved via wpa_cli; credentials intentionally not committed to git).

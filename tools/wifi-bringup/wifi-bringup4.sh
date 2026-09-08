@@ -1,6 +1,7 @@
 #!/bin/sh
-# /root/wifi-bringup4.sh — NX563J Wi-Fi bring-up v4 (PROVEN 2026-09-08:
-# wlan0 + wlan1 + p2p0 created, 2.4/5 GHz scan returns 11 networks)
+# /root/wifi-bringup4.sh — NX563J Wi-Fi+BT bring-up v4 (PROVEN 2026-09-08:
+# wlan0 + wlan1 + p2p0 created, 2.4/5 GHz scan returns 11 networks;
+# BT TLV download + chip MAC proven 2026-09-09)
 #
 # Proven chain: perms fix -> mounts (+persist!) -> fw staging (both roots!)
 #   -> irsc -> IPA uC load -> daemons (tftp_server with working RFS!)
@@ -97,6 +98,18 @@ echo "1e00000.qcom,ipa:qcom,smp2pgpio_map_ipa_1_in"  > /sys/bus/platform/drivers
 echo 1 > /dev/ipa
 sleep 3
 
+# --- 5b. BT rails up BEFORE chip POR (REQUIRED for Bluetooth) ---------------
+# The WCN3990's BT block is only released at chip POR when its rails are
+# already on. The chip PORs with the modem boot (step 8), so unblock the
+# btpower rfkill here. Found 2026-09-09: with rails off at POR the BT block
+# never answers on /dev/ttyHS0 (all rails/clock/pins verified stock-identical;
+# rails-on + modem bounce -> TLV download succeeds, MAC 00:a0:c6:c3:c9:3a).
+for r in /sys/class/rfkill/rfkill*; do
+	[ "$(cat $r/type 2>/dev/null)" = "bluetooth" ] && echo 1 > $r/state
+done
+mkdir -p /bt_firmware
+mountpoint -q /bt_firmware || mount -o ro /dev/sde22 /bt_firmware 2>/dev/null
+
 # --- 6. QMI / peripheral daemons (keepalive) --------------------------------
 kd() { # kd <name> [args...]
 	name=$1; shift
@@ -157,6 +170,11 @@ for i in $(seq 1 60); do
 			sleep 2
 		done
 		echo "gave up waiting for association" >>/var/log/udhcpc-wlan0.log' >/dev/null 2>&1 &
+		# BT SoC init (TLV rampatch+NVM over /dev/ttyHS0, chip FW is ready now)
+		if [ -x /vendor/bin/hci_qcomm_init ]; then
+			setsid sh -c "LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/hci_qcomm_init -e -N \
+				>>/var/log/hci_qcomm_init.log 2>&1" &
+		fi
 		exit 0
 	fi
 	sleep 5

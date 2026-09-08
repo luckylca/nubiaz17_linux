@@ -580,3 +580,46 @@ Operational notes:
   `handle3_egress_format failed` every 3 s — harmless for Wi-Fi
   (it's the WWAN offload path), present on all runs.
 
+
+## 2026-09-09 Bluetooth: WCN3990 BT block alive — chip-POR power condition found
+
+Architecture (from stock DTB decompiled out of
+`backups/2026-09-07-baseline/boot.img` board v2.1 + stock kernel
+IKCFG + vendor binaries):
+
+- BT HCI is plain 4-wire UART on BLSP1_UART3 (`uart@c171000`,
+  `/dev/ttyHS0`, pinctrl gpio45-48 `blsp_uart3_a`), powered by the
+  btpower driver (`bt_wcn3990` node, 6 rails + `rf_clk2`,
+  `/sys/class/rfkill/rfkill0` = `bt_power`). All values in the
+  lineage DT are stock-identical (incl. the misleadingly-labelled
+  `pmi8998_bob_pin1` whose regulator-name is correctly
+  `pm8998_bob_pin1`).
+- The **stock kernel also has `CONFIG_BT_HCIUART` unset**: stock
+  Android talks HCI through the `wcnss_filter` USERSPACE daemon
+  reading the TTY directly ("Step 7-ReaderThread-BT-SoC-To-Host"),
+  with SoC init (TLV rampatch crbtfw21.tlv + NVM crnv21.bin from
+  partition `bluetooth`=sde22, stock mount `/vendor/bt_firmware`)
+  done by `/vendor/bin/hci_qcomm_init` (`-e` prints env, `-N` skips
+  the final reset/baud restore, final baud 3000000).
+- For Linux/BlueZ we want kernel `hci0` instead →
+  `config/downstream-bt.fragment` adds `CONFIG_BT_HCIUART(+H4,+QCA)`,
+  RFCOMM/BNEP/HIDP. The 4.4-era in-kernel `hci_qca.c` (IBS-only, no
+  TLV) matches the userspace-TLV split exactly.
+
+**The blocker and its root cause:** with all rails on (verified in
+regulator_summary: s3=1352mV, s5=2040mV, l7=1800mV, l17=1304mV,
+l25=3312mV, bob_pin1=3600mV), `rf_clk2_pin` enabled, UART DM loopback
+passing, and pinctrl correctly switching sleep↔active on open, the
+chip stayed completely silent on the UART (hci_qcomm_init timeouts,
+zero bytes on power-cycle listen). Root cause: **the BT block inside
+the WCN3990 package is only released at chip POR when the BT rails
+are already on.** Our chip POR'd with the modem boot while rfkill0
+was still blocked. Fix: `echo 1 > rfkill0/state` BEFORE the modem
+boots, then bounce the modem → `hci_qcomm_init` immediately succeeds:
+TLV download, baud 3M, chip MAC `00:a0:c6:c3:c9:3a`, EXIT=0.
+
+`wifi-bringup4.sh` now unblocks the bluetooth rfkill in step 5b
+(before the modem hold) and mounts sde22 at `/bt_firmware`; after
+wlan0 appears it runs `hci_qcomm_init -e -N`. Remaining step: kernel
+rebuild with `config/downstream-bt.fragment` (needs CI), then
+`hciattach`/BlueZ to get `hci0`.
