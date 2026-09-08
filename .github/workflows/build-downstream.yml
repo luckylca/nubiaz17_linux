@@ -75,7 +75,17 @@ jobs:
       - name: Apply downstream compatibility patches
         working-directory: work/kernel
         run: |
-          git apply "$GITHUB_WORKSPACE/patches/downstream/0001-backport-scoped-guard-lock-pointer.patch"
+          for p in "$GITHUB_WORKSPACE"/patches/downstream/*.patch; do
+            echo "Applying $(basename "$p")"
+            git apply "$p"
+          done
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/downstream"
+          cp "$GITHUB_WORKSPACE"/patches/downstream/*.patch "$GITHUB_WORKSPACE/artifacts/downstream/"
+          count=$(ls "$GITHUB_WORKSPACE"/patches/downstream/*.patch | wc -l | tr -d ' ')
+          if [ "$count" -gt 1 ]; then
+            echo "ARTIFACT_SUFFIX=-patches" >> "$GITHUB_ENV"
+            echo "Building with $count local patches (not the pristine reproducible configuration)" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Configure
         working-directory: work/kernel

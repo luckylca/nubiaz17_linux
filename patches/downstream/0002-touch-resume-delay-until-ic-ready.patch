@@ -1,0 +1,52 @@
+diff --git a/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_core.c b/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_core.c
+index 56b248de..9f2967e2 100755
+--- a/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_core.c
++++ b/drivers/nubia/touch/nubia_synaptics_dsx/synaptics_dsx_core.c
+@@ -5271,11 +5271,44 @@ static void resume_work_func(struct work_struct *work)
+ 	struct synaptics_rmi4_data *rmi4_data =
+ 		container_of(work, struct synaptics_rmi4_data,
+ 			resume_work);
++	unsigned char probe_byte = 0;
++	int ret, attempt;
+ 
+ 	dev = &rmi4_data->pdev->dev;
+-	dev_info(dev, "resume workqueue start\n");
+-	synaptics_rmi4_resume(dev);
+-	dev_info(dev, "resume workqueue finish\n");
++
++	/*
++	 * nx563j: the in-cell touch IC is not ready for I2C immediately
++	 * after the rail/power handoff at boot. When the first contact
++	 * happens too early (our kernels fire the fb unblank ~1.9 s into
++	 * boot vs ~18 s on stock) every read NAKs, and the recovery loop
++	 * below (sw/hw reset every ~0.6 s) then keeps the IC from ever
++	 * finishing its own power-up, leaving it dead until the next
++	 * cold boot. Defer early resumes until the IC can be ready,
++	 * then verify it actually answers; if it still NAKs, cycle the
++	 * rails through suspend and retry the full resume.
++	 */
++	while (time_before(jiffies, msecs_to_jiffies(20000))) {
++		dev_info(dev, "[TP]resume deferred until touch IC ready\n");
++		msleep(500);
++	}
++
++	for (attempt = 0; attempt < 8; attempt++) {
++		dev_info(dev, "resume workqueue start (attempt %d)\n",
++				attempt + 1);
++		synaptics_rmi4_resume(dev);
++		ret = synaptics_rmi4_reg_read(rmi4_data,
++				rmi4_data->f01_query_base_addr, &probe_byte, 1);
++		if (ret >= 0) {
++			dev_info(dev, "resume workqueue finish (IC alive)\n");
++			return;
++		}
++		dev_err(dev, "[TP]touch IC still NAK after resume, cycling rails\n");
++		msleep(4000);
++		synaptics_rmi4_suspend(dev);
++		msleep(1000);
++	}
++	dev_err(dev, "resume workqueue finish (IC dead after %d attempts)\n",
++			attempt);
+ }
+ #endif
+ 
