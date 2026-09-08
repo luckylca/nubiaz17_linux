@@ -147,14 +147,16 @@ for i in $(seq 1 60); do
 		pidof wpa_supplicant >/dev/null 2>&1 || \
 			setsid wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf -D nl80211 \
 				>>/var/log/wpa_supplicant.log 2>&1 &
-		# DHCP once associated
-		setsid sh -c 'for i in $(seq 1 45); do
+		# DHCP once associated (wait up to 5 min for slow first association)
+		setsid sh -c 'for i in $(seq 1 150); do
 			wpa_cli -i wlan0 status 2>/dev/null | grep -q "wpa_state=COMPLETED" && {
+				echo "associated, running udhcpc" >>/var/log/udhcpc-wlan0.log
 				udhcpc -i wlan0 -n -q >>/var/log/udhcpc-wlan0.log 2>&1
 				exit 0
 			}
 			sleep 2
-		done' >/dev/null 2>&1 &
+		done
+		echo "gave up waiting for association" >>/var/log/udhcpc-wlan0.log' >/dev/null 2>&1 &
 		exit 0
 	fi
 	sleep 5
