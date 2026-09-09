@@ -218,61 +218,65 @@ for i in $(seq 1 60); do
 		#  - hci_qcomm_init fired the instant wlan0 appears can beat the BT
 		#    block out of chip POR (all VS reads time out); ~60s later it
 		#    works. So WAIT 45s before the first attempt instead.
-		#  - A retry loop is DANGEROUS here: an attempt killed by its own
-		#    timeout leaves the chip mid-TLV / at an unknown baud, and the
-		#    next attempt's re-init left hci0 in HCI_USER_CHANNEL (HCIDEVUP
-		#    -> EBUSY). Killing the ldisc to recover live-locks the 4.4
-		#    hci_uart. So: at most 2 attempts, and never kill hciattach.
+		#  - Killing anything in this chain is fatal: a killed init attempt
+		#    leaves the chip mid-TLV (next re-init -> HCI_USER_CHANNEL ->
+		#    HCIDEVUP EBUSY); killing a live hciattach live-locks the 4.4
+		#    hci_uart close path; hciconfig down+up wedges the next open
+		#    (110). Nothing here is ever killed or cycled.
+		#  - btmgmt public-addr before the first HCIDEVUP deadlocks (mgmt
+		#    waits for adapter setup). bdaddr pinning, if ever needed,
+		#    happens after bluetoothd is up. The NVM lottery bdaddr is
+		#    accepted at boot.
+		#  - Boots I and J each lost the chain to a SILENT DEATH at two
+		#    different points (hciattach holder died right after attach;
+		#    the init subshell vanished right after a successful TLV, no
+		#    error logged, no OOM in dmesg). A one-shot linear chain
+		#    cannot survive that, so this is a SUPERVISOR: every 10s it
+		#    re-evaluates the stack and takes the one idempotent step that
+		#    moves it toward bluetoothd. Every step is safe to repeat.
 		if [ -x /vendor/bin/hci_qcomm_init ]; then
 			setsid /bin/sh -c "
 				PATH=/bin:/sbin:/usr/bin:/usr/sbin; export PATH
 				sleep 45
-				ok=0
-				for i in 1 2; do
-					LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/hci_qcomm_init -e -N \
-						>>/var/log/hci_qcomm_init.log 2>&1 && { ok=1; break; }
-					echo \"hci_qcomm_init attempt \$i failed\" \
-						>>/var/log/hci_qcomm_init.log
-					sleep 20
-				done
-				if [ \$ok = 1 ] && [ -x /root/hciattach-qca ]; then
-					setsid /root/hciattach-qca /dev/ttyHS0 3000000 \
-						>>/var/log/hciattach.log 2>&1
-					sleep 3
-					# 2026-09-09: the holder can die silently right after
-					# attach (the ldisc dies with it -> hci0 never
-					# appears and the rest of the chain is skipped).
-					# A dead holder frees the ldisc, so one re-attach
-					# is safe; NEVER kill a live one (close wedges).
-					if [ ! -d /sys/class/bluetooth/hci0 ] && \
-					   ! pidof hciattach-qca >/dev/null 2>&1; then
-						echo \"hciattach died pre-hci0; re-attaching once\" \
+				init_done=0
+				init_tries=0
+				attach_tries=0
+				up_tries=0
+				for n in \$(seq 1 60); do
+					pidof bluetoothd >/dev/null 2>&1 && exit 0
+					if [ -d /sys/class/bluetooth/hci0 ]; then
+						if hciconfig hci0 2>/dev/null | grep -q \"UP RUNNING\"; then
+							pidof dbus-daemon >/dev/null 2>&1 || {
+								mkdir -p /run/dbus
+								rm -f /run/dbus/dbus.pid /run/dbus/system_bus_socket
+								dbus-daemon --system --fork 2>/dev/null
+							}
+							[ -x /usr/lib/bluetooth/bluetoothd ] && \
+								setsid /usr/lib/bluetooth/bluetoothd \
+									>>/var/log/bluetoothd.log 2>&1
+							hciconfig hci0 name nx563j-linux >>/var/log/hciattach.log 2>&1
+						elif [ \$up_tries -lt 6 ]; then
+							up_tries=\$((up_tries+1))
+							hciconfig hci0 up >>/var/log/hciattach.log 2>&1
+						fi
+					elif pidof hciattach-qca >/dev/null 2>&1; then
+						: # holder alive; hci0 is on its way
+					elif [ \$init_done = 1 ] && [ \$attach_tries -lt 3 ]; then
+						attach_tries=\$((attach_tries+1))
+						echo \"supervisor: attach try \$attach_tries\" \
 							>>/var/log/hciattach.log
 						setsid /root/hciattach-qca /dev/ttyHS0 3000000 \
 							>>/var/log/hciattach.log 2>&1
-						sleep 3
+					elif [ \$init_done = 0 ] && [ \$init_tries -lt 2 ]; then
+						init_tries=\$((init_tries+1))
+						LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
+							/vendor/bin/hci_qcomm_init -e -N \
+							>>/var/log/hci_qcomm_init.log 2>&1 && init_done=1
 					fi
-					if [ -d /sys/class/bluetooth/hci0 ]; then
-						# NOTE: do NOT run "btmgmt public-addr" here -
-						# the mgmt command waits for adapter setup,
-						# which only happens at the first HCIDEVUP
-						# below: btmgmt blocks forever and the whole
-						# BT chain stalls (seen 2026-09-09). The NVM
-						# lottery bdaddr is accepted; pin it later
-						# from user space after bluetoothd is up.
-						for t in 1 2 3; do
-							hciconfig hci0 up >>/var/log/hciattach.log 2>&1 && break
-							sleep 5
-						done
-						hciconfig hci0 name nx563j-linux >>/var/log/hciattach.log 2>&1
-						mkdir -p /run/dbus
-						rm -f /run/dbus/dbus.pid /run/dbus/system_bus_socket
-						dbus-daemon --system --fork 2>/dev/null
-						[ -x /usr/lib/bluetooth/bluetoothd ] && \
-							setsid /usr/lib/bluetooth/bluetoothd \
-								>>/var/log/bluetoothd.log 2>&1 &
-					fi
-				fi
+					sleep 10
+				done
+				echo \"supervisor: gave up init_done=\$init_done init=\$init_tries attach=\$attach_tries up=\$up_tries\" \
+					>>/var/log/hciattach.log
 			" >/dev/null 2>&1 &
 		fi
 		exit 0

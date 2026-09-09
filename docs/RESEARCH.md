@@ -793,3 +793,16 @@ and bluetoothd died with "D-Bus setup failed: Connection refused".
   the next open times out (110) and only a reboot recovers. Same
   family as "never kill hciattach": the UART ldisc must be opened
   once and left alone.
+- **Trap — the hciattach-qca holder can die silently right after
+  attach** (seen on boot I): it prints "attached", daemonizes, then
+  exits before the script's 3s check; the ldisc dies with it, hci0
+  never registers, and the whole `[ -d hci0 ]` block is skipped. A
+  dead holder frees the ldisc cleanly, so the script now re-attaches
+  ONCE when hci0 is absent AND no hciattach-qca is running. Never
+  apply this to a live holder (close wedges, see above).
+- **Trap — manual dbus recovery on tmpfs /run**: `/var/run` is a
+  symlink to `/run`, which the script mounts as a fresh tmpfs, so
+  `dbus-daemon --system` after a manual recovery needs
+  `mkdir -p /run/dbus` first, or it fails with
+  `Failed to bind socket "/var/run/dbus/system_bus_socket": No such
+  file or directory`.
