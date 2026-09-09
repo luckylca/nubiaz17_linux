@@ -2,9 +2,44 @@
 
 Last updated: 2026-09-09
 
-> **Current authoritative status:** the live inventory, backups, both kernel CI paths, and signed boot repacking are already complete. The "Current blocker" and "Next actions" sections below reflect the remaining device-side work.
+## 2026-09-09 Ubuntu 24.04 as a selectable boot target
 
-## Current authoritative status
+The end goal is a full Debian/Ubuntu userland with display, touch and
+Wi-Fi. Milestone reached: the userdata filesystem now carries an
+official **Ubuntu Base 24.04.4 arm64** rootfs at `/ubuntu` (SHA-256
+verified against Canonical's SHA256SUMS), and the initramfs `init`
+selects the chroot target via `/boot-target` (`ubuntu` -> /ubuntu with
+`rc.boot.ubuntu`; anything else -> the Alpine mini-rootfs, so a broken
+experiment can never wedge the boot).
+
+Validated in stages:
+
+1. **chroot validation from Alpine**: apt over HTTPS (aliyun
+   ubuntu-ports mirror; noble = deb822 `ubuntu.sources`; the 4.4 kernel
+   breaks apt's `_apt` sandbox DNS, so `APT::Sandbox::User "root"`),
+   openssh-server answering SSH from the Mac with wlan0/hci0 visible.
+2. **Boot L (first Ubuntu-target cold boot)**: Ubuntu userspace booted,
+   sshd + fbdash + dhclient Wi-Fi all worked; NTP and BT failed and
+   were root-caused (dhclient hooks deleted /etc/resolv.conf; the
+   hciattach-qca copy was musl-dynamic, ENOENT under Ubuntu). The BT
+   supervisor logged the failure precisely (`setsid: failed to
+   execute`) and gave up cleanly — the resilience design paid off.
+3. **Fixes**: watcher rebuilds resolv.conf from the lease;
+   hciattach-qca rebuilt glibc-static in the chroot; live recovery then
+   brought hci0 UP RUNNING + bluetoothd (BlueZ 5.72) under Ubuntu.
+
+No systemd (kernel 4.4 has no cgroup v2); services are hand-started by
+`initramfs/rc.boot.ubuntu` + the rootfs-agnostic `wifi-bringup4.sh`
+(dhclient/udhcpc, ntpdate/ntpd, bluetoothd path shims).
+
+Touch: `nubia_synaptics_dsx` (i2c 5-0020) registers as
+**/dev/input/event4** (standard evdev MT, `ABS_MT_*` + `BTN_TOUCH`),
+IC confirmed alive after resume retries; live event capture pending a
+physical swipe test.
+
+## Current authoritative status (pre-Ubuntu baseline)
+
+> **Current authoritative status:** the live inventory, backups, both kernel CI paths, and signed boot repacking are already complete. The "Current blocker" and "Next actions" sections below reflect the remaining device-side work.
 
 - Full 64 MiB read-only backups of `boot`, `recovery`, and `recovery2` are captured and hashed under the gitignored Mac backup directory.
 - The existing NX563J Linux 6.0-oriented bridge builds successfully and its extracted kernel outputs are bit-for-bit reproducible across independent GitHub Actions runs `34096169661` and `34098047345`.
