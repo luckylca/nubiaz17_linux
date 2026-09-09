@@ -196,27 +196,36 @@ for i in $(seq 1 60); do
 		done
 		echo "gave up waiting for association" >>/var/log/udhcpc-wlan0.log' >/dev/null 2>&1 &
 		# BT SoC init (TLV rampatch+NVM over /dev/ttyHS0), then kernel hci0.
-		# 2026-09-09: hci_qcomm_init fired the moment wlan0 appeared RACES the
-		# BT block (still settling after chip POR): all 3 VS reads timed out,
-		# but a manual run ~60s later succeeded. Retry with backoff, then
-		# attach the hci_uart QCA ldisc (needs the BT kernel fragment) and
-		# bring hci0 up for BlueZ.
+		# 2026-09-09 lessons:
+		#  - hci_qcomm_init fired the instant wlan0 appears can beat the BT
+		#    block out of chip POR (all VS reads time out); ~60s later it
+		#    works. So WAIT 45s before the first attempt instead.
+		#  - A retry loop is DANGEROUS here: an attempt killed by its own
+		#    timeout leaves the chip mid-TLV / at an unknown baud, and the
+		#    next attempt's re-init left hci0 in HCI_USER_CHANNEL (HCIDEVUP
+		#    -> EBUSY). Killing the ldisc to recover live-locks the 4.4
+		#    hci_uart. So: at most 2 attempts, and never kill hciattach.
 		if [ -x /vendor/bin/hci_qcomm_init ]; then
 			setsid /bin/sh -c "
 				PATH=/bin:/sbin:/usr/bin:/usr/sbin; export PATH
-				for i in 1 2 3 4 5 6; do
+				sleep 45
+				ok=0
+				for i in 1 2; do
 					LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/hci_qcomm_init -e -N \
-						>>/var/log/hci_qcomm_init.log 2>&1 && break
-					echo \"hci_qcomm_init attempt \$i failed, retry in 10s\" \
+						>>/var/log/hci_qcomm_init.log 2>&1 && { ok=1; break; }
+					echo \"hci_qcomm_init attempt \$i failed\" \
 						>>/var/log/hci_qcomm_init.log
-					sleep 10
+					sleep 20
 				done
-				if [ -x /root/hciattach-qca ]; then
+				if [ \$ok = 1 ] && [ -x /root/hciattach-qca ]; then
 					setsid /root/hciattach-qca /dev/ttyHS0 3000000 \
 						>>/var/log/hciattach.log 2>&1
-					sleep 2
+					sleep 3
 					if [ -d /sys/class/bluetooth/hci0 ]; then
-						hciconfig hci0 up >>/var/log/hciattach.log 2>&1
+						for t in 1 2 3; do
+							hciconfig hci0 up >>/var/log/hciattach.log 2>&1 && break
+							sleep 5
+						done
 						hciconfig hci0 name nx563j-linux >>/var/log/hciattach.log 2>&1
 						mkdir -p /run/dbus
 						dbus-daemon --system --fork 2>/dev/null
