@@ -99,6 +99,18 @@ Also: `/run` is now a tmpfs in the bring-up script (a stale
 `/run/dbus/dbus.pid` from the persistent rootfs silently killed
 bluetoothd autostart on one boot).
 
+**Boot K (2026-09-09), fully verified unattended**: after two
+consecutive boots lost the chain to silent deaths in the orchestration
+(boot I: the hciattach holder died right after attach; boot J: the
+init subshell vanished right after a successful TLV download - no
+error logged, no OOM, chip fully initialized underneath), the one-shot
+linear chain was replaced by a converging supervisor (every 10 s, take
+the one idempotent step toward bluetoothd: init x2 max -> attach x3
+max -> hciconfig up x6 max -> dbus + bluetoothd; never kills or cycles
+anything). Cold boot K: wifi=YES, NTP year=2026, hci0 UP RUNNING
+(00:A0:C6:7B:C0:E3), bluetoothd up, BLE scan 11 devices - zero manual
+steps.
+
 ## 2026-09-09 Bluetooth COMPLETE: kernel hci0 up, BlueZ 5.76 scanning
 
 The BT kernel (CI run `34294947043`, fragment

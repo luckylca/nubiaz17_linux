@@ -806,3 +806,17 @@ and bluetoothd died with "D-Bus setup failed: Connection refused".
   `mkdir -p /run/dbus` first, or it fails with
   `Failed to bind socket "/var/run/dbus/system_bus_socket": No such
   file or directory`.
+- **Resolution — the supervisor**: after boot I (hciattach holder died
+  silently right after attach) and boot J (the init subshell vanished
+  right after a successful TLV download; chip proven fully initialized
+  by a later manual attach that came up with the very bdaddr the log's
+  NVM write had announced), the linear one-shot chain was replaced by
+  a converging supervisor in wifi-bringup4.sh: every 10 s it takes the
+  one idempotent step that moves the stack toward bluetoothd (init
+  max x2 while none succeeded -> attach max x3 while no holder lives
+  -> hciconfig up max x6 -> dbus + bluetoothd). Verified on cold boot
+  K: wifi + NTP + hci0 UP RUNNING + bluetoothd + BLE scan, zero manual
+  steps. One loose end never explained: boot J's init log ends with a
+  third, truncated init run ("PF_ BUI" then EOF) no script path can
+  have authored; the supervisor design tolerates exactly this class of
+  ambiguity, which is the point.
