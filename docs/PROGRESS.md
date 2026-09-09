@@ -27,6 +27,13 @@ Validated in stages:
 3. **Fixes**: watcher rebuilds resolv.conf from the lease;
    hciattach-qca rebuilt glibc-static in the chroot; live recovery then
    brought hci0 UP RUNNING + bluetoothd (BlueZ 5.72) under Ubuntu.
+4. **Boot M (verified unattended)**: cold boot into the Ubuntu target
+   reached `wifi=YES, NTP year=2026, hci0 UP RUNNING
+   (00:A0:C6:A6:F3:E7), bluetoothd (BlueZ 5.72), fbdash on panel` with
+   zero manual steps; BLE scan found 11 devices. **Ubuntu 24.04 is now
+   the daily-driver userland.** Rollback = delete `/boot-target` (or
+   its `ubuntu` line) and reboot; the Alpine mini-rootfs is untouched
+   at `/`.
 
 No systemd (kernel 4.4 has no cgroup v2); services are hand-started by
 `initramfs/rc.boot.ubuntu` + the rootfs-agnostic `wifi-bringup4.sh`
