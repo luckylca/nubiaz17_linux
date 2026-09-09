@@ -43,6 +43,12 @@
 #   - /run must be a tmpfs: a stale /run/dbus/dbus.pid from a previous
 #     boot makes dbus-daemon refuse to start, then bluetoothd exits
 #     ("D-Bus setup failed: Connection refused").
+#   - sysrq 'b' hard-resets WITHOUT syncing: files deployed over ssh
+#     minutes earlier can silently revert to their on-disk version.
+#     Always run sync before a sysrq reboot.
+#   - Never "hciconfig hci0 down" then "up": the 4.4 hci_uart close path
+#     wedges the UART and the next open times out (110). Only a reboot
+#     recovers it.
 set -x
 
 # --- -1. base device node sanity (BEFORE anything else) --------------------
@@ -233,12 +239,27 @@ for i in $(seq 1 60); do
 					setsid /root/hciattach-qca /dev/ttyHS0 3000000 \
 						>>/var/log/hciattach.log 2>&1
 					sleep 3
-					if [ -d /sys/class/bluetooth/hci0 ]; then
-						# The NVM lottery hands out a random bdaddr
-						# tail each boot; pin a stable address (serial
-						# 392a99df) while the adapter is still down.
-						btmgmt --index 0 public-addr 00:A0:C6:39:2A:99 \
+					# 2026-09-09: the holder can die silently right after
+					# attach (the ldisc dies with it -> hci0 never
+					# appears and the rest of the chain is skipped).
+					# A dead holder frees the ldisc, so one re-attach
+					# is safe; NEVER kill a live one (close wedges).
+					if [ ! -d /sys/class/bluetooth/hci0 ] && \
+					   ! pidof hciattach-qca >/dev/null 2>&1; then
+						echo \"hciattach died pre-hci0; re-attaching once\" \
+							>>/var/log/hciattach.log
+						setsid /root/hciattach-qca /dev/ttyHS0 3000000 \
 							>>/var/log/hciattach.log 2>&1
+						sleep 3
+					fi
+					if [ -d /sys/class/bluetooth/hci0 ]; then
+						# NOTE: do NOT run "btmgmt public-addr" here -
+						# the mgmt command waits for adapter setup,
+						# which only happens at the first HCIDEVUP
+						# below: btmgmt blocks forever and the whole
+						# BT chain stalls (seen 2026-09-09). The NVM
+						# lottery bdaddr is accepted; pin it later
+						# from user space after bluetoothd is up.
 						for t in 1 2 3; do
 							hciconfig hci0 up >>/var/log/hciattach.log 2>&1 && break
 							sleep 5
