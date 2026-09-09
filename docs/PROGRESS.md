@@ -41,8 +41,12 @@ No systemd (kernel 4.4 has no cgroup v2); services are hand-started by
 
 Touch: `nubia_synaptics_dsx` (i2c 5-0020) registers as
 **/dev/input/event4** (standard evdev MT, `ABS_MT_*` + `BTN_TOUCH`),
-IC confirmed alive after resume retries; live event capture pending a
-physical swipe test.
+IC confirmed alive after resume retries. **Verified live 2026-09-09**:
+a physical swipe produced IRQ 125 bursts and a clean MT protocol B
+event stream (`ABS_MT_TRACKING_ID` -> `BTN_TOUCH` down -> X=429,
+Y=401, in range for 1080x1920). No kernel work needed; userspace reads
+evdev directly. **All six priority hardware items are now working
+under Ubuntu: UFS, SSH, display, touch, Wi-Fi, Bluetooth.**
 
 ## Current authoritative status (pre-Ubuntu baseline)
 
