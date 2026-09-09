@@ -17,12 +17,21 @@
 #     test never boot-loops and never drains the battery; the good Ubuntu
 #     boot image is then reflashed from fastboot.
 #
-# sde20 layout matches the downstream diag init: stage marks at sector
-# $SLOT (0,1,2,...), rolling dmesg at sector 64, a one-shot diag dump at
-# sector 8192. Read back with dd bs=512.
+# sde20 layout is documented below and is deliberately disjoint from the
+# production init. Read back with dd bs=512.
 
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 LOGDEV=""
+
+# sde20 sector layout MUST stay disjoint from the production initramfs init,
+# because after this test the good Ubuntu image is reflashed and booted, and
+# ITS init rewrites its own marks at sectors 0-11, dmesg at 64 and the diag
+# dump at 8192. Anything this bridge writes at those offsets is silently
+# overwritten before it can be read back. So this bridge logs at 20480+:
+#   stage marks at 20480+, rolling dmesg at 20600, diag dump at 21504.
+MBASE=20480
+MDMESG=20600
+MDIAG=21504
 
 /bin/busybox --install -s /bin 2>/dev/null
 
@@ -55,7 +64,7 @@ while [ $i -lt 40 ]; do
   i=$((i + 1))
 done
 
-SLOT=0
+SLOT=$MBASE
 mark() {
   [ -n "$LOGDEV" ] || return 0
   echo "ML $SLOT: $*" | dd of="$LOGDEV" bs=512 seek=$SLOT conv=notrunc 2>/dev/null
@@ -106,8 +115,8 @@ fi
   echo "=== mem ==="; head -3 /proc/meminfo
 } > /diag.txt 2>&1
 [ -n "$LOGDEV" ] && {
-  cat /diag.txt | dd of="$LOGDEV" bs=512 seek=8192 conv=notrunc 2>/dev/null
-  dmesg | dd of="$LOGDEV" bs=512 seek=64 conv=notrunc 2>/dev/null
+  cat /diag.txt | dd of="$LOGDEV" bs=512 seek=$MDIAG conv=notrunc 2>/dev/null
+  dmesg | dd of="$LOGDEV" bs=512 seek=$MDMESG conv=notrunc 2>/dev/null
 }
 mark "bridge diag written; heartbeat then poweroff"
 
@@ -117,9 +126,9 @@ mark "bridge diag written; heartbeat then poweroff"
 # never fires. A plain reboot is avoided on purpose: with this image in
 # the boot partition a reboot would just re-run the test.
 i=0
-while [ $i -lt 16 ]; do
+while [ $i -lt 20 ]; do
   sleep 15
-  [ -n "$LOGDEV" ] && dmesg | dd of="$LOGDEV" bs=512 seek=64 conv=notrunc 2>/dev/null
+  [ -n "$LOGDEV" ] && dmesg | dd of="$LOGDEV" bs=512 seek=$MDMESG conv=notrunc 2>/dev/null
   i=$((i + 1))
 done
 
