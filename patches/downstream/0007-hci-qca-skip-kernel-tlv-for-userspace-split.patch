@@ -28,11 +28,12 @@ index e24de668..def72878 100644
 +	 * already-initialized chip answers the EDL version request with
 +	 * HCI status 0x0c (Command Disallowed -> EBUSY), failing HCIDEVUP.
 +	 * The baud switch above is still required: hci_qcomm_init leaves
-+	 * the chip at 115200 and expects the VS baud command. Firmware is
-+	 * loaded; just mark IBS on.
++	 * the chip listening at 115200 and it follows the VS baud command
++	 * to the operational speed. Leave IBS off (the -ENOENT path does
++	 * too): with in-band sleep enabled, every post-setup command parks
++	 * in tx_wait_q waiting for a WAKE_ACK the chip never sends, and
++	 * __hci_init times out (-ETIMEDOUT on HCIDEVUP).
 +	 */
-+	set_bit(STATE_IN_BAND_SLEEP_ENABLED, &qca->flags);
-+	qca_debugfs_init(hdev);
 +	ret = 0;
  
  	/* Setup bdaddr */
