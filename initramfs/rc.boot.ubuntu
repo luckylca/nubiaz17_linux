@@ -1,0 +1,39 @@
+#!/bin/sh
+# NX563J Ubuntu rootfs boot script — executed chrooted from the diag
+# initramfs when /boot-target (on the userdata filesystem) selects
+# "ubuntu". Runs inside the Ubuntu 24.04 base at /ubuntu.
+#
+# No systemd: the 4.4 kernel has no cgroup v2, so services are
+# hand-started exactly like the Alpine rc.boot does. Everything that
+# matters (vendor bionic daemons, firmware staging, Wi-Fi/BT chain)
+# lives in wifi-bringup4.sh, which is rootfs-agnostic.
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+hostname nx563j 2>/dev/null
+
+# /run must be a fresh tmpfs (see wifi-bringup4.sh header: stale
+# /run/dbus/dbus.pid on the persistent rootfs kills bluetoothd).
+mountpoint -q /run || mount -t tmpfs tmpfs /run
+mkdir -p /run/sshd /var/log /run/dbus
+
+# SSH: OpenSSH (host keys persist in /etc/ssh, authorized_keys in
+# /root/.ssh — both installed during the chroot validation phase).
+ssh-keygen -A >/dev/null 2>&1
+/usr/sbin/sshd -E /var/log/sshd.log
+
+# Display: unblank the cmd-mode panel, then hand the framebuffer to the
+# long-lived holder. The fd MUST stay open or mdss re-suspends the
+# panel within a second. fbdash is a static binary (musl), runs here
+# unchanged.
+F=/sys/class/graphics/fb0
+if [ -e /dev/fb0 ] && [ -x /root/fbdash/fbdash ]; then
+  echo 1 > $F/msm_cmd_autorefresh_en 2>/dev/null
+  setsid /root/fbdash/fbdash >/var/log/fbdash.log 2>&1 &
+  sleep 1
+  echo 128 > /sys/class/leds/lcd-backlight/brightness 2>/dev/null
+  echo 1500 > /sys/class/leds/wled/brightness 2>/dev/null
+fi
+
+# Wi-Fi + BT bring-up in background (proven recipe; ~3-4 min to wlan0 +
+# DHCP + NTP + hci0 + bluetoothd).
+[ -x /root/wifi-bringup4.sh ] && setsid sh -c "/root/wifi-bringup4.sh > /tmp/wb4.log 2>&1" &

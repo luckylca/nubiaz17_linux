@@ -51,6 +51,20 @@
 #     recovers it.
 set -x
 
+# --- rootfs shims (Alpine vs Ubuntu) ---------------------------------------
+# One script serves both rootfs: the Alpine mini-rootfs (busybox udhcpc /
+# ntpd, bluez under /usr/lib/bluetooth) and the Ubuntu 24.04 base
+# (isc-dhcp-client / ntpdate, bluez under /usr/libexec/bluetooth).
+# Everything the heavy vendor chain needs (bionic daemons, firmware) is
+# rootfs-independent; only these three user-facing pieces differ.
+if [ -x /usr/sbin/dhclient ]; then DHCP="dhclient -1 -v wlan0"; else DHCP="udhcpc -i wlan0 -n -q"; fi
+if [ -x /usr/sbin/ntpdate ]; then NTP="ntpdate ntp.aliyun.com"; else NTP="ntpd -q -p ntp.aliyun.com"; fi
+BTD=""
+for d in /usr/libexec/bluetooth/bluetoothd /usr/lib/bluetooth/bluetoothd; do
+	[ -x "$d" ] && BTD=$d && break
+done
+[ -x /usr/sbin/dhclient ] && mkdir -p /var/lib/dhcp
+
 # --- -1. base device node sanity (BEFORE anything else) --------------------
 [ -c /dev/null ] || { rm -f /dev/null; mknod /dev/null c 1 3; }
 chmod 0666 /dev/null /dev/zero /dev/full /dev/random /dev/urandom 2>/dev/null
@@ -191,23 +205,25 @@ for i in $(seq 1 60); do
 				>>/var/log/wpa_supplicant.log 2>&1 &
 		# DHCP once associated (wait up to 8 min for slow first association;
 		# cold 5GHz association took >5 min once and the 150x2s watcher lost
-		# the race by seconds)
-		setsid /bin/sh -c 'echo "=== boot $(date) ===" >>/var/log/udhcpc-wlan0.log
+		# the race by seconds). DHCP/NTP binaries differ per rootfs - the
+		# shim values are baked into this single-quoted script here.
+		setsid /bin/sh -c 'DHCP="'"$DHCP"'" NTP="'"$NTP"'"; export DHCP NTP
+		echo "=== boot $(date) ===" >>/var/log/udhcpc-wlan0.log
 		for i in $(seq 1 240); do
 			wpa_cli -i wlan0 status 2>/dev/null | grep -q "wpa_state=COMPLETED" && {
-				echo "associated, running udhcpc" >>/var/log/udhcpc-wlan0.log
+				echo "associated, running DHCP" >>/var/log/udhcpc-wlan0.log
 				# 2026-09-09: a single udhcpc raced and lost its lease once
 				# (lease logged, no address on wlan0) - verify and retry
 				for try in 1 2 3; do
-					udhcpc -i wlan0 -n -q >>/var/log/udhcpc-wlan0.log 2>&1
+					$DHCP >>/var/log/udhcpc-wlan0.log 2>&1
 					ip -4 addr show wlan0 | grep -q inet && break
-					echo "udhcpc try $try: no address, retrying" >>/var/log/udhcpc-wlan0.log
+					echo "DHCP try $try: no address, retrying" >>/var/log/udhcpc-wlan0.log
 					sleep 2
 				done
 				# 2026-09-09: RTC has no working hwclock write and boots at
 				# 1970; once we have a lease, set the clock (aliyun NTP is
-				# reachable where pool.ntp.org is not) so HTTPS apk validates.
-				( ntpd -q -p ntp.aliyun.com >>/var/log/ntp.log 2>&1 ) &
+				# reachable where pool.ntp.org is not) so HTTPS validates.
+				( $NTP >>/var/log/ntp.log 2>&1 ) &
 				exit 0
 			}
 			sleep 2
@@ -251,8 +267,8 @@ for i in $(seq 1 60); do
 								rm -f /run/dbus/dbus.pid /run/dbus/system_bus_socket
 								dbus-daemon --system --fork 2>/dev/null
 							}
-							[ -x /usr/lib/bluetooth/bluetoothd ] && \
-								setsid /usr/lib/bluetooth/bluetoothd \
+							[ -n "$BTD" ] && \
+								setsid $BTD \
 									>>/var/log/bluetoothd.log 2>&1
 							hciconfig hci0 name nx563j-linux >>/var/log/hciattach.log 2>&1
 						elif [ \$up_tries -lt 6 ]; then

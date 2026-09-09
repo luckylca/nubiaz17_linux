@@ -162,15 +162,29 @@ if [ -b /dev/sda10 ]; then
   if mount -t ext4 -o noatime /dev/sda10 $ROOTFS 2>/dev/null \
   || mount /dev/sda10 $ROOTFS 2>/dev/null; then
     mark "rootfs mounted from sda10 (waited ${i}s)"
-    mount -o bind /dev $ROOTFS/dev 2>/dev/null
-    mount -t devpts devpts $ROOTFS/dev/pts 2>/dev/null
-    mount -o bind /proc $ROOTFS/proc 2>/dev/null
-    mount -o bind /sys $ROOTFS/sys 2>/dev/null
-    if [ -x $ROOTFS/root/rc.boot ]; then
-      chroot $ROOTFS /root/rc.boot
-      mark "rootfs rc.boot done (dropbear etc.)"
+    # Boot-target selection: the userdata filesystem can carry several
+    # rootfs side by side. /boot-target naming "ubuntu" (and an
+    # executable /ubuntu/root/rc.boot.ubuntu) chroots into the Ubuntu
+    # 24.04 base at /ubuntu instead of the Alpine mini-rootfs at /.
+    # Absent or broken flag -> Alpine, so a bad Ubuntu experiment can
+    # never brick the boot.
+    TARGET=$ROOTFS
+    RCSCRIPT=/root/rc.boot
+    if grep -q "^ubuntu" $ROOTFS/boot-target 2>/dev/null \
+    && [ -x $ROOTFS/ubuntu/root/rc.boot.ubuntu ]; then
+      TARGET=$ROOTFS/ubuntu
+      RCSCRIPT=/root/rc.boot.ubuntu
+      mark "boot target: ubuntu"
+    fi
+    mount -o bind /dev $TARGET/dev 2>/dev/null
+    mount -t devpts devpts $TARGET/dev/pts 2>/dev/null
+    mount -o bind /proc $TARGET/proc 2>/dev/null
+    mount -o bind /sys $TARGET/sys 2>/dev/null
+    if [ -x $TARGET$RCSCRIPT ]; then
+      chroot $TARGET $RCSCRIPT
+      mark "rootfs rc.boot done (ssh etc.)"
     else
-      mark "no $ROOTFS/root/rc.boot"
+      mark "no $TARGET$RCSCRIPT"
     fi
   else
     mark "sda10 mount failed"
