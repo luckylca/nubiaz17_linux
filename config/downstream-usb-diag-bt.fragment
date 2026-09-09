@@ -1,6 +1,18 @@
 # Optional downstream config fragment for the diagnostic kernel build.
 # Enables USB gadget serial/ethernet functions and devtmpfs so the
 # diagnostic initramfs can offer a shell without a working panel.
+#
+# NOTE for future edits: the CI workflow merges this file with
+# scripts/kconfig/merge_config.sh, whose override warnings grep for
+# "CONFIG_" tokens anywhere in the file. Keep CONFIG_ symbol names out
+# of comment text (write e.g. "HCIUART" instead), or the warning output
+# gets garbled (cosmetic only, but confusing).
+#
+# Also: USB_G_SERIAL / USB_G_NCM (legacy composite gadget drivers) must
+# NOT be added here. They share the "USB Gadget Drivers" Kconfig choice
+# with USB_CONFIGFS, and a choice allows exactly one winner; adding them
+# can silently disable configfs (and with it USB_CONFIGFS_UEVENT, which
+# leaves drivers/usb/gadget/configfs.c uncompilable in this tree).
 CONFIG_DEVTMPFS=y
 CONFIG_DEVTMPFS_MOUNT=y
 CONFIG_USB_U_SERIAL=y
@@ -9,20 +21,24 @@ CONFIG_USB_F_SERIAL=y
 CONFIG_USB_F_ACM=y
 CONFIG_USB_F_RNDIS=y
 CONFIG_USB_F_ECM=y
-CONFIG_USB_G_SERIAL=y
-CONFIG_USB_G_NCM=y
+# Pin the "USB Gadget Drivers" choice to configfs (defconfig already does;
+# repeated here so the choice winner is explicit).
+CONFIG_USB_CONFIGFS=y
 CONFIG_USB_CONFIGFS_SERIAL=y
 CONFIG_USB_CONFIGFS_ACM=y
 CONFIG_USB_CONFIGFS_RNDIS=y
 CONFIG_USB_CONFIGFS_ECM=y
 # NX563J Bluetooth bring-up (WCN3990 "Cherokee", HCI over BLSP1_UART3 = /dev/ttyHS0)
 #
+# NOTE: keep CONFIG_* tokens out of comments in this file — the CI merge
+# step greps for them (see downstream-usb-diag.fragment header).
+#
 # Ground truth (2026-09-09, live on device):
-#   - stock Nubia 4.4.194 kernel also has CONFIG_BT_HCIUART unset: its BT
-#     stack (bluedroid) talks HCI through the wcnss_filter USERSPACE daemon
-#     reading /dev/ttyHS0 directly. For a Linux/BlueZ userspace we want the
-#     standard kernel hci0 instead -> enable the hci_uart line discipline
-#     with the QCA (IBS) protocol.
+#   - stock Nubia 4.4.194 kernel also leaves the HCIUART line discipline
+#     unset: its BT stack (bluedroid) talks HCI through the wcnss_filter
+#     USERSPACE daemon reading /dev/ttyHS0 directly. For a Linux/BlueZ
+#     userspace we want the standard kernel hci0 instead -> enable the
+#     hci_uart line discipline with the QCA (IBS) protocol.
 #   - TLV rampatch/NVM download is done in userspace by the stock vendor
 #     binary hci_qcomm_init (crbtfw21.tlv + crnv21.bin from the bluetooth
 #     partition, sde22). The 4.4-era in-kernel hci_qca.c (IBS only, no TLV)
@@ -34,6 +50,9 @@ CONFIG_USB_CONFIGFS_ECM=y
 #     backups/2026-09-07-baseline/boot.img, board v2.1); UART DM loopback
 #     passes; hci_qcomm_init completes TLV download and reads the chip MAC
 #     (00:a0:c6:c3:c9:3a) once the above POR condition is met.
+#   - Building the HCIUART/QCA code in this 4.4 tree required two source
+#     fixes, carried as patches/downstream/0005 (stale rx_lock member in
+#     hci_ldisc.c) and 0006 (always-true edl->data array checks in btqca.c).
 
 CONFIG_BT_HCIUART=y
 CONFIG_BT_HCIUART_H4=y

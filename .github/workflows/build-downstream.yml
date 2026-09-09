@@ -125,16 +125,18 @@ jobs:
             exit "$rc"
           fi
       - name: Collect artifacts
+        if: always()
         run: |
           mkdir -p artifacts/downstream
           printf '%s\n' "$KERNEL_REF" > artifacts/downstream/KERNEL_REQUESTED_REF
           printf '%s\n' "$KERNEL_COMMIT" > artifacts/downstream/KERNEL_SOURCE_COMMIT
-          cp work/kernel/out/arch/arm64/boot/Image.gz-dtb artifacts/downstream/
-          cp work/kernel/out/.config artifacts/downstream/kernel.config
-          find work/kernel/out/arch -type f -name '*NX563J*.dtb' -exec cp {} artifacts/downstream/ \; || true
+          cp work/kernel/out/arch/arm64/boot/Image.gz-dtb artifacts/downstream/ 2>/dev/null || true
+          cp work/kernel/out/.config artifacts/downstream/kernel.config 2>/dev/null || true
+          find work/kernel/out/arch -type f -name '*NX563J*.dtb' -exec cp {} artifacts/downstream/ \; 2>/dev/null || true
           sha256sum artifacts/downstream/* | tee artifacts/downstream/SHA256SUMS
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: nx563j-downstream-${{ env.KERNEL_REF }}${{ env.ARTIFACT_SUFFIX }}
           path: artifacts/downstream/

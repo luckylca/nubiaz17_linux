@@ -1,11 +1,14 @@
 # NX563J Bluetooth bring-up (WCN3990 "Cherokee", HCI over BLSP1_UART3 = /dev/ttyHS0)
 #
+# NOTE: keep CONFIG_* tokens out of comments in this file — the CI merge
+# step greps for them (see downstream-usb-diag.fragment header).
+#
 # Ground truth (2026-09-09, live on device):
-#   - stock Nubia 4.4.194 kernel also has CONFIG_BT_HCIUART unset: its BT
-#     stack (bluedroid) talks HCI through the wcnss_filter USERSPACE daemon
-#     reading /dev/ttyHS0 directly. For a Linux/BlueZ userspace we want the
-#     standard kernel hci0 instead -> enable the hci_uart line discipline
-#     with the QCA (IBS) protocol.
+#   - stock Nubia 4.4.194 kernel also leaves the HCIUART line discipline
+#     unset: its BT stack (bluedroid) talks HCI through the wcnss_filter
+#     USERSPACE daemon reading /dev/ttyHS0 directly. For a Linux/BlueZ
+#     userspace we want the standard kernel hci0 instead -> enable the
+#     hci_uart line discipline with the QCA (IBS) protocol.
 #   - TLV rampatch/NVM download is done in userspace by the stock vendor
 #     binary hci_qcomm_init (crbtfw21.tlv + crnv21.bin from the bluetooth
 #     partition, sde22). The 4.4-era in-kernel hci_qca.c (IBS only, no TLV)
@@ -17,6 +20,9 @@
 #     backups/2026-09-07-baseline/boot.img, board v2.1); UART DM loopback
 #     passes; hci_qcomm_init completes TLV download and reads the chip MAC
 #     (00:a0:c6:c3:c9:3a) once the above POR condition is met.
+#   - Building the HCIUART/QCA code in this 4.4 tree required two source
+#     fixes, carried as patches/downstream/0005 (stale rx_lock member in
+#     hci_ldisc.c) and 0006 (always-true edl->data array checks in btqca.c).
 
 CONFIG_BT_HCIUART=y
 CONFIG_BT_HCIUART_H4=y
