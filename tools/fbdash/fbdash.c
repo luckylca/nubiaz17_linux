@@ -1,17 +1,24 @@
-// fbdash.c — NX563J framebuffer status dashboard.
+// fbdash.c — NX563J framebuffer status dashboard + touch HMI.
 //
 // Long-lived fb0 holder (keeps the cmd-mode panel alive) that renders a
 // status page with the kernel 8x16 font scaled 2x: hostname, kernel,
-// uptime, load, memory, rootfs usage, usb0 address and SSH listener.
-// Refreshes every few seconds and re-commits via FBIOPAN_DISPLAY.
+// uptime, load, memory, rootfs usage, usb0/wlan0 addresses, BT state,
+// SSH listener and wall clock. Bottom bar has touch buttons read from
+// the synaptics event4 (evdev MT protocol B):
+//
+//   [DESKTOP]  hand fb0 over to /root/desktop.sh (X session); fbdash
+//              exits and is restarted by desktop.sh when X ends
+//   [DIM]/[BRIGHT]  backlight -/+ (clamped so it never goes black)
 //
 // Build on device:  gcc -O2 -static -o fbdash fbdash.c
-// Run:              nohup ./fbdash &
+// Run:              setsid ./fbdash &
 
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/fb.h>
+#include <linux/input.h>
 #include <net/if.h>
+#include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +28,7 @@
 #include <sys/socket.h>
 #include <sys/statvfs.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <netinet/in.h>
@@ -32,12 +40,19 @@
 #define CW (8 * SCALE)
 #define CH (16 * SCALE)
 #define FG 0x00e8e8e8 /* near-white */
-#define ACCENT 0x0000d7ff /* orange-ish: b,g,r byte order below is little-endian 0x00RRGGBB */
+#define ACCENT 0x0000d7ff
 #define HDR 0x00ffaa00
 #define BG 0x00000000
+#define BTN_BG 0x00202020
+#define BTN_EDGE 0x00ffaa00
+
+#define BL_PATH "/sys/class/leds/lcd-backlight/brightness"
+#define TOUCH_DEV "/dev/input/event4"
 
 static uint32_t *fb;
 static uint32_t stride, xres, yres;
+static int touch_fd = -1;
+static int desktop_req;
 
 static void px(uint32_t x, uint32_t y, uint32_t c)
 {
@@ -84,6 +99,168 @@ static void hr(int cy)
 		for (int t = -1; t <= 1; t++)
 			px(x, y + t, HDR);
 }
+
+/* --- buttons -------------------------------------------------------------*/
+
+struct button {
+	uint32_t x, y, w, h;
+	const char *label;
+	enum { ACT_NONE, ACT_DESKTOP, ACT_DIM, ACT_BRIGHT } act;
+};
+
+static struct button buttons[3];
+
+static void buttons_layout(void)
+{
+	uint32_t bw = 340, bh = 100, gap = 10;
+	uint32_t y0 = yres - bh - 40;
+	buttons[0] = (struct button){ gap, y0, bw, bh, "DESKTOP", ACT_DESKTOP };
+	buttons[1] = (struct button){ gap * 2 + bw, y0, bw, bh, "DIM", ACT_DIM };
+	buttons[2] = (struct button){ gap * 3 + bw * 2, y0, bw, bh, "BRIGHT", ACT_BRIGHT };
+}
+
+static void draw_button(const struct button *b)
+{
+	for (uint32_t y = b->y; y < b->y + b->h; y++)
+		for (uint32_t x = b->x; x < b->x + b->w; x++)
+			px(x, y, BTN_BG);
+	for (uint32_t x = b->x; x < b->x + b->w; x++)
+		for (int t = 0; t < 3; t++) {
+			px(x, b->y + t, BTN_EDGE);
+			px(x, b->y + b->h - 1 - t, BTN_EDGE);
+		}
+	for (uint32_t y = b->y; y < b->y + b->h; y++)
+		for (int t = 0; t < 3; t++) {
+			px(b->x + t, y, BTN_EDGE);
+			px(b->x + b->w - 1 - t, y, BTN_EDGE);
+		}
+	int len = strlen(b->label);
+	int cx = (int)(b->x + (b->w - (uint32_t)len * CW) / 2) / CW;
+	int cy = (int)(b->y + (b->h - CH) / 2) / CH;
+	draw_text(cx, cy, b->label, HDR);
+}
+
+static void draw_buttons(void)
+{
+	for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++)
+		draw_button(&buttons[i]);
+}
+
+/* --- backlight ------------------------------------------------------------*/
+
+static int bl_get(void)
+{
+	char buf[16];
+	int fd = open(BL_PATH, O_RDONLY);
+	ssize_t r = fd >= 0 ? read(fd, buf, sizeof(buf) - 1) : -1;
+	if (fd >= 0)
+		close(fd);
+	if (r <= 0)
+		return -1;
+	buf[r] = 0;
+	return atoi(buf);
+}
+
+static void bl_set(int v)
+{
+	if (v < 16)
+		v = 16; /* never go black: the user could not find BRIGHT again */
+	if (v > 4095)
+		v = 4095;
+	char buf[16];
+	int n = snprintf(buf, sizeof(buf), "%d", v);
+	int fd = open(BL_PATH, O_WRONLY);
+	if (fd >= 0) {
+		write(fd, buf, n);
+		close(fd);
+	}
+}
+
+/* --- touch (evdev MT protocol B) ------------------------------------------*/
+
+static void touch_open(void)
+{
+	touch_fd = open(TOUCH_DEV, O_RDONLY | O_NONBLOCK);
+}
+
+/* Poll pending touch events; sets desktop_req when DESKTOP is tapped. */
+static void touch_poll(void)
+{
+	if (touch_fd < 0)
+		return;
+	static int tx = -1, ty = -1; /* last reported position */
+	struct input_event ev[16];
+	for (;;) {
+		ssize_t r = read(touch_fd, ev, sizeof(ev));
+		if (r <= 0)
+			return;
+		int n = r / (int)sizeof(ev[0]);
+		for (int i = 0; i < n; i++) {
+			if (ev[i].type == EV_ABS &&
+			    ev[i].code == ABS_MT_POSITION_X)
+				tx = ev[i].value;
+			else if (ev[i].type == EV_ABS &&
+				 ev[i].code == ABS_MT_POSITION_Y)
+				ty = ev[i].value;
+			else if (ev[i].type == EV_ABS &&
+				 ev[i].code == ABS_MT_TRACKING_ID &&
+				 ev[i].value == -1 && tx >= 0 && ty >= 0) {
+				/* finger up: tap at (tx, ty) */
+				for (size_t k = 0; k < sizeof(buttons) / sizeof(buttons[0]); k++) {
+					struct button *b = &buttons[k];
+					if ((uint32_t)tx >= b->x && (uint32_t)tx < b->x + b->w &&
+					    (uint32_t)ty >= b->y && (uint32_t)ty < b->y + b->h) {
+						int bl;
+						switch (b->act) {
+						case ACT_DESKTOP:
+							desktop_req = 1;
+							break;
+						case ACT_DIM:
+							bl = bl_get();
+							if (bl >= 0)
+								bl_set(bl - 256);
+							break;
+						case ACT_BRIGHT:
+							bl = bl_get();
+							if (bl >= 0)
+								bl_set(bl + 256);
+							break;
+						default:
+							break;
+						}
+					}
+				}
+				tx = ty = -1;
+			}
+		}
+		if (r < (ssize_t)sizeof(ev))
+			return;
+	}
+}
+
+/* Spawn /root/desktop.sh (which opens fb0 to keep the panel alive) and
+ * wait for its ready flag; the caller then exits and releases fb0. */
+static void start_desktop(void)
+{
+	pid_t p = fork();
+	if (p == 0) {
+		setsid();
+		execl("/bin/sh", "sh", "/root/desktop.sh", (char *)NULL);
+		_exit(0);
+	}
+	for (int i = 0; i < 50; i++) {
+		if (access("/tmp/desk-ready", F_OK) == 0)
+			return; /* desktop.sh holds fb0 now */
+		if (waitpid(p, NULL, WNOHANG) == p)
+			break; /* desktop.sh died before ready */
+		usleep(100000);
+	}
+	/* 5 s and no ready flag: keep the dashboard rather than risk a
+	 * suspended panel with no fb holder. */
+	desktop_req = 0;
+}
+
+/* --- status providers ------------------------------------------------------*/
 
 static void read_first_line(const char *path, char *out, size_t n)
 {
@@ -193,7 +370,30 @@ int main(void)
 	struct utsname uts;
 	uname(&uts);
 
+	buttons_layout();
+	touch_open();
+
+	struct pollfd pfd = { .fd = touch_fd, .events = POLLIN };
+	int tick = 0;
+
 	for (;;) {
+		/* 1 s tick: poll wakes early on touch input; the status
+		 * page itself refreshes every 5 s */
+		if (touch_fd >= 0) {
+			if (poll(&pfd, 1, 1000) > 0)
+				touch_poll();
+		} else {
+			sleep(1);
+		}
+		if (desktop_req) {
+			start_desktop();
+			if (desktop_req) /* handover confirmed */
+				break;
+			continue;
+		}
+		if ((tick++ % 5) != 0)
+			continue;
+
 		char buf[256], tmp[128];
 		int row = 1;
 
@@ -257,6 +457,12 @@ int main(void)
 			 port22_listening() ? "listening" : "DOWN");
 		draw_text(1, row++, buf, port22_listening() ? FG : 0x000000ff);
 
+		int bl = bl_get();
+		if (bl >= 0) {
+			snprintf(buf, sizeof(buf), "bl     %d/4095", bl);
+			draw_text(1, row++, buf, FG);
+		}
+
 		time_t now = time(NULL);
 		struct tm *lt = localtime(&now);
 		strftime(tmp, sizeof(tmp), "date   %Y-%m-%d %H:%M", lt);
@@ -265,14 +471,21 @@ int main(void)
 		hr(row);
 		row += 1;
 		draw_text(1, row++, "display: JDI R63452 cmd", FG);
-		draw_text(1, row++, "touch:   synaptics rmi4", FG);
-		draw_text(1, row++, "telnet fallback :23", FG);
+		draw_text(1, row++, "touch:   synaptics rmi4 OK", FG);
+
+		draw_buttons();
 
 		var.yoffset = 0;
 		var.activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
 		ioctl(fd, FBIOPUT_VSCREENINFO, &var);
 		ioctl(fd, FBIOPAN_DISPLAY, &var);
-
-		sleep(5);
 	}
+
+	/* DESKTOP handover: desktop.sh already holds fb0 (fd 9 there),
+	 * so releasing ours never blanks the panel. */
+	munmap(fb, fix.smem_len);
+	close(fd);
+	if (touch_fd >= 0)
+		close(touch_fd);
+	return 0;
 }

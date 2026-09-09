@@ -1,0 +1,9 @@
+#!/bin/sh
+# ~/.xinitrc — NX563J touch desktop session.
+# openbox WM + tint2 panel + one xterm; everything reachable by finger.
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+xsetroot -solid "#203040" 2>/dev/null
+xterm -geometry 60x20+20+20 -fa "WenQuanYi Micro Hei" -fs 14 &
+tint2 &
+exec openbox
