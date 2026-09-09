@@ -806,6 +806,27 @@ and bluetoothd died with "D-Bus setup failed: Connection refused".
   `mkdir -p /run/dbus` first, or it fails with
   `Failed to bind socket "/var/run/dbus/system_bus_socket": No such
   file or directory`.
+- **Trap — musl-dynamic binaries silently break under another rootfs**:
+  hciattach-qca had been built WITHOUT `-static` on Alpine (unlike
+  fbdash), so under Ubuntu it failed to exec with ENOENT ("No such
+  file or directory") because /lib/ld-musl-aarch64.so.1 does not exist
+  there. The supervisor logged `setsid: failed to execute` and gave up
+  cleanly. Fixed by rebuilding it glibc-static inside the Ubuntu
+  chroot (gcc -O2 -static; 73 KB -> 711 KB). Anything copied between
+  rootfs must be static or have its loader shipped.
+- **Trap — dhclient deletes /etc/resolv.conf**: on the Ubuntu target,
+  the isc-dhcp-client hook chain (which pokes systemd and ignores the
+  chroot) left /etc/resolv.conf MISSING after the lease; ntpdate then
+  died with "Temporary failure in name resolution" and apt hung on
+  DNS. The bring-up watcher now rebuilds resolv.conf from the lease's
+  domain-name-servers when no nameserver is present.
+- **Trap — quote-concatenation into single-quoted -c strings**: baking
+  parent values into a single-quoted setsid payload via
+  `'"$VAR"'` made the PARENT's parse fragile (a later `${ns%%;*}` in
+  the body flipped quote parity and broke sh -n at the wrong line).
+  Pass such values via the ENVIRONMENT instead
+  (`DHCP="$DHCP" NTP="$NTP" setsid /bin/sh -c '...'`) — setsid and sh
+  preserve env, and the payload stays a pure single-quoted string.
 - **Resolution — the supervisor**: after boot I (hciattach holder died
   silently right after attach) and boot J (the init subshell vanished
   right after a successful TLV download; chip proven fully initialized

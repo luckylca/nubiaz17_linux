@@ -205,9 +205,10 @@ for i in $(seq 1 60); do
 				>>/var/log/wpa_supplicant.log 2>&1 &
 		# DHCP once associated (wait up to 8 min for slow first association;
 		# cold 5GHz association took >5 min once and the 150x2s watcher lost
-		# the race by seconds). DHCP/NTP binaries differ per rootfs - the
-		# shim values are baked into this single-quoted script here.
-		setsid /bin/sh -c 'DHCP="'"$DHCP"'" NTP="'"$NTP"'"; export DHCP NTP
+		# the race by seconds). DHCP/NTP binaries differ per rootfs - passed
+		# via ENVIRONMENT, not baked into the single-quoted script (quote-
+		# concatenation made the parent parse fragile; broke on ${ns%%;*}).
+		DHCP="$DHCP" NTP="$NTP" setsid /bin/sh -c '
 		echo "=== boot $(date) ===" >>/var/log/udhcpc-wlan0.log
 		for i in $(seq 1 240); do
 			wpa_cli -i wlan0 status 2>/dev/null | grep -q "wpa_state=COMPLETED" && {
@@ -223,6 +224,17 @@ for i in $(seq 1 60); do
 				# 2026-09-09: RTC has no working hwclock write and boots at
 				# 1970; once we have a lease, set the clock (aliyun NTP is
 				# reachable where pool.ntp.org is not) so HTTPS validates.
+				# BUT under Ubuntu, dhclient hooks can leave /etc/resolv.conf
+				# MISSING (boot L: ntpdate died with "Temporary failure in
+				# name resolution" right after the lease). Rebuild it from
+				# the lease if so.
+				grep -q nameserver /etc/resolv.conf 2>/dev/null || {
+					ns=$(grep -a "domain-name-servers" /var/lib/dhcp/dhclient.leases 2>/dev/null | tail -1)
+					ns=${ns##*servers }
+					ns=${ns%%;*}
+					[ -n "$ns" ] && echo "nameserver $ns" > /etc/resolv.conf && \
+						echo "resolv.conf rebuilt: $ns" >>/var/log/udhcpc-wlan0.log
+				}
 				( $NTP >>/var/log/ntp.log 2>&1 ) &
 				exit 0
 			}
