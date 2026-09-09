@@ -695,3 +695,45 @@ Operational notes:
 - `reboot2` (RESTART2 with mode string, e.g. `reboot2 bootloader`)
   built on-device at `/root/reboot2` — the path into fastboot without
   adbd (Android `/system/bin/reboot` hangs in the chroot).
+
+## 2026-09-09 Bluetooth part 3: unattended cold-boot chain — the IBS trap
+
+Automating the proven manual chain into `wifi-bringup4.sh` exposed three
+more failure modes, one per boot cycle:
+
+1. **mksh name-search**: inner `sh -c` subshells resolved to Android's
+   `/system/bin/sh` (the script prepends `/vendor/bin:/system/bin` to
+   PATH for the bionic daemons), and mksh could not exec musl binaries
+   by name ("inaccessible or not found") while absolute paths worked.
+   Fix: pin every inner subshell to `/bin/sh` with an explicit
+   `PATH=/bin:/sbin:/usr/bin:/usr/sbin`.
+2. **hci_qcomm_init vs chip POR**: fired right at wlan0-appearance it
+   loses to the BT block still coming out of reset (all VS reads time
+   out). A 45 s settle + at most 2 attempts 20 s apart is reliable; a
+   killed mid-TLV attempt leaves the chip at an unknown baud, and
+   killing a wedged hciattach live-locks the 4.4 hci_uart close path —
+   so the script never kills the ldisc and gets it right on the first
+   attach.
+3. **kernel qca_setup vs userspace TLV**: three kernel revisions were
+   needed (`patches/downstream/0007`):
+   - *Unpatched* (full in-kernel EDL rome download): the chip, already
+     initialized by `hci_qcomm_init`, answers the EDL version request
+     with HCI status 0x0c (Command Disallowed) which `net/bluetooth/
+     lib.c:86` maps to **EBUSY** → "Can't init device hci0: Resource
+     busy". (On the manual-verify boot the kernel's request_firmware
+     for `qca/rampatch_*.bin` happened to fail with -ENOENT, which the
+     stock code treats as "run with original fw" — which is why the
+     manual chain worked on the unpatched kernel.)
+   - *v1* (skip baud dance + rome): **ETIMEDOUT** — hciattach puts the
+     host at 3M but `hci_qcomm_init -e -N` leaves the chip listening at
+     115200; without the VS set-baud handshake nothing is answered.
+   - *v2* (dance kept, rome skipped, **IBS enabled**): **ETIMEDOUT** —
+     the real trap. With `STATE_IN_BAND_SLEEP_ENABLED` set and
+     tx_ibs_state starting at ASLEEP, `qca_enqueue` parks every
+     post-setup frame in `tx_wait_q` and waits for a HCI_IBS_WAKE_ACK
+     the userspace-initialized chip never sends (nothing ever configured
+     IBS on the chip side), so `__hci_init`'s standard commands never
+     reach the wire. The baud dance itself cannot fail in this tree —
+     `qca_set_baudrate` is fire-and-forget with a 300 ms settle.
+   - *v3* (final): baud dance kept, rome skipped, **IBS left off** —
+     exactly the stock `-ENOENT` path that the working manual boot took.

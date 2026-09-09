@@ -40,6 +40,9 @@
 #   - hci_qcomm_init fired the instant wlan0 appears can beat the BT block
 #     out of reset (all VS reads time out); it works ~60s later. Retries
 #     with backoff are mandatory, not cosmetic.
+#   - /run must be a tmpfs: a stale /run/dbus/dbus.pid from a previous
+#     boot makes dbus-daemon refuse to start, then bluetoothd exits
+#     ("D-Bus setup failed: Connection refused").
 set -x
 
 # --- -1. base device node sanity (BEFORE anything else) --------------------
@@ -51,6 +54,11 @@ chmod 0666 /dev/null /dev/zero /dev/full /dev/random /dev/urandom 2>/dev/null
 	setsid /root/logcatd >> /var/log/logcatd.log 2>&1 &
 
 # --- 0. base mounts (idempotent) ------------------------------------------
+# /run must be a fresh tmpfs: the rootfs is persistent, so a stale
+# /run/dbus/dbus.pid from a previous boot makes dbus-daemon --system
+# --fork refuse to start ("pid file exists") and bluetoothd then dies
+# with "D-Bus setup failed: Connection refused" (seen 2026-09-09).
+mountpoint -q /run || mount -t tmpfs tmpfs /run
 mkdir -p /tmp/vendor /tmp/system
 mountpoint -q /tmp/vendor || mount -o ro /dev/sde41 /tmp/vendor
 mountpoint -q /tmp/system || mount -o ro /dev/sda9 /tmp/system
@@ -228,6 +236,7 @@ for i in $(seq 1 60); do
 						done
 						hciconfig hci0 name nx563j-linux >>/var/log/hciattach.log 2>&1
 						mkdir -p /run/dbus
+						rm -f /run/dbus/dbus.pid /run/dbus/system_bus_socket
 						dbus-daemon --system --fork 2>/dev/null
 						[ -x /usr/lib/bluetooth/bluetoothd ] && \
 							setsid /usr/lib/bluetooth/bluetoothd \
