@@ -1,59 +1,11 @@
 diff --git a/drivers/bluetooth/hci_qca.c b/drivers/bluetooth/hci_qca.c
-index e24de668..87a6fc78 100644
+index e24de668..def72878 100644
 --- a/drivers/bluetooth/hci_qca.c
 +++ b/drivers/bluetooth/hci_qca.c
-@@ -832,7 +832,7 @@ static struct sk_buff *qca_dequeue(struct hci_uart *hu)
- 	return skb_dequeue(&qca->txq);
- }
- 
--static uint8_t qca_get_baudrate_value(int speed)
-+static uint8_t __maybe_unused qca_get_baudrate_value(int speed)
- {
- 	switch (speed) {
- 	case 9600:
-@@ -866,7 +866,7 @@ static uint8_t qca_get_baudrate_value(int speed)
+@@ -944,21 +944,19 @@ static int qca_setup(struct hci_uart *hu)
+ 		hci_uart_set_baudrate(hu, speed);
  	}
- }
  
--static int qca_set_baudrate(struct hci_dev *hdev, uint8_t baudrate)
-+static int __maybe_unused qca_set_baudrate(struct hci_dev *hdev, uint8_t baudrate)
- {
- 	struct hci_uart *hu = hci_get_drvdata(hdev);
- 	struct qca_data *qca = hu->priv;
-@@ -914,51 +914,23 @@ static int qca_setup(struct hci_uart *hu)
- 	/* Patch downloading has to be done without IBS mode */
- 	clear_bit(STATE_IN_BAND_SLEEP_ENABLED, &qca->flags);
- 
--	/* Setup initial baudrate */
--	speed = 0;
--	if (hu->init_speed)
--		speed = hu->init_speed;
--	else if (hu->proto->init_speed)
--		speed = hu->proto->init_speed;
--
--	if (speed)
--		hci_uart_set_baudrate(hu, speed);
--
--	/* Setup user speed if needed */
--	speed = 0;
--	if (hu->oper_speed)
--		speed = hu->oper_speed;
--	else if (hu->proto->oper_speed)
--		speed = hu->proto->oper_speed;
--
--	if (speed) {
--		qca_baudrate = qca_get_baudrate_value(speed);
--
--		BT_INFO("%s: Set UART speed to %d", hdev->name, speed);
--		ret = qca_set_baudrate(hdev, qca_baudrate);
--		if (ret) {
--			BT_ERR("%s: Failed to change the baud rate (%d)",
--			       hdev->name, ret);
--			return ret;
--		}
--		hci_uart_set_baudrate(hu, speed);
--	}
--
 -	/* Setup patch / NVM configurations */
 -	ret = qca_uart_setup_rome(hdev, qca_baudrate);
 -	if (!ret) {
@@ -69,20 +21,16 @@ index e24de668..87a6fc78 100644
 -		 */
 -		ret = 0;
 -	}
-+	/* NX563J: skip the kernel-side baud switch and EDL rome download.
-+	 * On this device the TLV rampatch+NVM is downloaded in USERSPACE by
++	/* NX563J: skip the kernel-side EDL rome download. The TLV
++	 * rampatch+NVM is downloaded in USERSPACE by
 +	 * /vendor/bin/hci_qcomm_init before the hci_uart ldisc is attached
-+	 * (the same split stock Android uses with wcnss_filter). The kernel
-+	 * path below cannot coexist with it: it first drops the host UART to
-+	 * init_speed while the chip may sit at the operational baud, then
-+	 * issues the EDL version request which the already-initialized chip
-+	 * answers with HCI error 0x0c (Command Disallowed -> EBUSY), so
-+	 * HCIDEVUP fails. The transport is already at the final baud with
-+	 * firmware loaded when we get here; just enable IBS and go.
++	 * (the same split stock Android uses with wcnss_filter). The
++	 * already-initialized chip answers the EDL version request with
++	 * HCI status 0x0c (Command Disallowed -> EBUSY), failing HCIDEVUP.
++	 * The baud switch above is still required: hci_qcomm_init leaves
++	 * the chip at 115200 and expects the VS baud command. Firmware is
++	 * loaded; just mark IBS on.
 +	 */
-+	(void)speed;
-+	(void)qca_baudrate;
-+	(void)ret;
 +	set_bit(STATE_IN_BAND_SLEEP_ENABLED, &qca->flags);
 +	qca_debugfs_init(hdev);
 +	ret = 0;
