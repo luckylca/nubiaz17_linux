@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-09-08
+Last updated: 2026-09-09
 
 > **Current authoritative status:** the live inventory, backups, both kernel CI paths, and signed boot repacking are already complete. The "Current blocker" and "Next actions" sections below reflect the remaining device-side work.
 
@@ -65,11 +65,35 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 
 ## Next software actions
 
-- Run the downstream CI with `config/downstream-usb-diag.fragment` to add gadget serial/RNDIS/devtmpfs to the diag kernel (needs `gh auth login` on the Mac).
 - Migrate the boot flow from busybox-PID1+chroot toward switch_root into the Alpine rootfs with OpenRC service management.
+- Set the device clock (NTP) so HTTPS apk repos validate; keep aliyun mirror as the default repo source.
 - Investigate display bring-up (JDI R63452 panel via downstream mdss, or simple-framebuffer) and Synaptics RMI4 touch.
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
+
+## 2026-09-09 Bluetooth COMPLETE: kernel hci0 up, BlueZ 5.76 scanning
+
+The BT kernel (CI run `34294947043`, fragment
+`config/downstream-usb-diag-bt.fragment`) is flashed to `boot` and
+verified live:
+
+- `/root/hciattach-qca /dev/ttyHS0 3000000` (N_HCI ldisc + QCA proto)
+  after `hci_qcomm_init -e -N` → kernel registers `hci0`.
+- `hciconfig hci0 up` → UP RUNNING, BD Address `00:A0:C6:A3:43:4F`,
+  zero HCI errors.
+- dbus + bluetoothd (BlueZ 5.76, aliyun mirror): controller powered,
+  alias `nx563j-linux`, BLE scan discovers 9+ real devices with RSSI.
+- Wi-Fi unaffected: wlan0 autostart still associates and gets a lease.
+- Four latent never-compiled-before bugs fixed to get here, all
+  documented in `docs/RESEARCH.md` 2026-09-09 Bluetooth part 2:
+  `hci_ldisc` stale rx_lock (patch 0005), `btqca` always-true array
+  checks (patch 0006), the fragment's legacy-gadget choice conflict
+  that silently revoked `USB_CONFIGFS_UEVENT`, and the
+  multi-composite `rndis.o`/`KBUILD_MODNAME` failure (RNDIS dropped;
+  USB networking uses NCM).
+- Bring-up script updated: hci_qcomm_init retry loop (the instant-wlan0
+  fire raced the BT block out of reset), hciattach + `hciconfig up` +
+  bluetoothd autostart, udhcpc lease verification.
 
 ## 2026-09-09 Bluetooth: chip alive, TLV download + MAC proven; kernel fragment ready
 

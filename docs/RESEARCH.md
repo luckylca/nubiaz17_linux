@@ -623,3 +623,75 @@ TLV download, baud 3M, chip MAC `00:a0:c6:c3:c9:3a`, EXIT=0.
 wlan0 appears it runs `hci_qcomm_init -e -N`. Remaining step: kernel
 rebuild with `config/downstream-bt.fragment` (needs CI), then
 `hciattach`/BlueZ to get `hci0`.
+
+## 2026-09-09 Bluetooth part 2: kernel hci0 + BlueZ verified end-to-end
+
+The CI rebuild with `config/downstream-usb-diag-bt.fragment` took four
+rounds; each failure was a latent bug in code that had NEVER been
+compiled in this tree (stock and the LineageOS defconfig both leave
+HCIUART off, and no earlier CI run ever applied a fragment):
+
+1. `hci_ldisc.c:492` referenced `hu->rx_lock`, a member `struct hci_uart`
+   does not have here (partial backport leftover, unused elsewhere) →
+   `patches/downstream/0005` deletes the stray `spin_lock_init`.
+2. `btqca.c` (ROME TLV helpers) tripped clang `-Werror
+   -Wpointer-bool-conversion` on `!edl->data` (zero-length array member,
+   always false) at two TLV receive sites → `patches/downstream/0006`.
+3. `configfs.c` failed with undeclared `gadget_index` / missing
+   `gadget_info.dev` — i.e. compiled with `USB_CONFIGFS_UEVENT=n` even
+   though the defconfig sets it. Root cause: the fragment also enabled
+   `USB_G_SERIAL`/`USB_G_NCM`, legacy gadget drivers that share the
+   "USB Gadget Drivers" Kconfig **choice** with `USB_CONFIGFS` (this
+   tree sources `legacy/Kconfig` INSIDE the choice). Multiple y-members
+   make choice resolution environment-dependent: locally it picked
+   `USB_G_NCM` (killing configfs entirely), in CI it kept
+   `USB_CONFIGFS=y` but revoked `UEVENT`. Fix: drop the legacy gadget
+   lines from the fragment and pin `CONFIG_USB_CONFIGFS=y` explicitly.
+   Verified by replicating `merge_config.sh` + `olddefconfig` locally.
+4. `rndis.c:46` `KBUILD_MODNAME` undeclared: `rndis.o` is linked into
+   THREE composite objects (`usb_f_rndis`, `usb_f_gsi`,
+   `usb_f_qcrndis`); with F_GSI already on from the defconfig, adding
+   F_RNDIS made rndis.o multi-composite so kbuild drops its
+   `-DKBUILD_MODNAME`. Fix: no RNDIS in the fragment (the USB network
+   link uses the defconfig's NCM anyway).
+
+Also learned: `merge_config.sh` greps the whole fragment for `CONFIG_*`
+tokens when printing override warnings — keep symbol names out of
+fragment comments.
+
+**Flashing:** `fastboot oem nubia_unlock NUBIA_NX563J` had to be
+re-issued (the Nubia flash gate is per-session, as documented), then
+the signed diag image with the BT kernel flashed to `boot` cleanly
+(user-authorized).
+
+**On-device verification (2026-09-09, all live):**
+- Cold boot on the BT kernel: Wi-Fi autostart unaffected (wlan0
+  associated, lease 192.168.1.186).
+- The script-fired `hci_qcomm_init` FAILED with "read BT SoC timed out"
+  while a manual run ~60 s later succeeded (`BTS_ADDRESS`, EXIT=0) —
+  firing it the instant wlan0 appears races the BT block out of reset.
+  The script now retries with backoff (6 × 10 s).
+- `/root/hciattach-qca /dev/ttyHS0 3000000` (raw termios2 + CRTSCTS,
+  N_HCI ldisc, HCIUARTSETPROTO QCA=8) → kernel registers
+  `/sys/class/bluetooth/hci0` on `c171000.uart`.
+- `hciconfig hci0 up` → **UP RUNNING**, BD Address `00:A0:C6:A3:43:4F`,
+  70 commands/events, 0 errors.
+- dbus + `bluetoothd` (BlueZ 5.76 from aliyun mirror): controller
+  powered, alias `nx563j-linux`; **BLE scan discovers 9+ real devices
+  with RSSI** — full RX/TX through the chip verified.
+- bdaddr differs from the first readback (`...:c3:c9:3a` vs
+  `...:a3:43:4f`): the NVM-programmed address is not stable across
+  inits; if a fixed address matters, set it via `btmgmt public-addr`.
+
+Operational notes:
+- apk TLS: the device RTC sits at "Jan 2" so certificate notBefore
+  checks fail; `http://mirrors.aliyun.com` repos work regardless.
+  `ca-certificates` is now installed; HTTPS will validate once the
+  clock is set (NTP/date).
+- bluez + bluez-deprecated (hciconfig/hcitool/btattach) installed in
+  the rootfs; bluetoothd lives at `/usr/lib/bluetooth/bluetoothd`.
+- The udhcpc watcher raced once (lease logged, no address): it now
+  verifies the address landed and retries up to 3×.
+- `reboot2` (RESTART2 with mode string, e.g. `reboot2 bootloader`)
+  built on-device at `/root/reboot2` — the path into fastboot without
+  adbd (Android `/system/bin/reboot` hangs in the chroot).

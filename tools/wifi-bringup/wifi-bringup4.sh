@@ -1,12 +1,15 @@
 #!/bin/sh
 # /root/wifi-bringup4.sh — NX563J Wi-Fi+BT bring-up v4 (PROVEN 2026-09-08:
 # wlan0 + wlan1 + p2p0 created, 2.4/5 GHz scan returns 11 networks;
-# BT TLV download + chip MAC proven 2026-09-09)
+# 2026-09-09: BT TLV download, kernel hci0 via hci_uart QCA ldisc,
+# BlueZ 5.76 powered + BLE scan finds real devices)
 #
 # Proven chain: perms fix -> mounts (+persist!) -> fw staging (both roots!)
-#   -> irsc -> IPA uC load -> daemons (tftp_server with working RFS!)
+#   -> irsc -> IPA uC load -> BT rfkill BEFORE modem POR
+#   -> daemons (tftp_server with working RFS!)
 #   -> modem boot -> QMI_IPA_INIT -> wlan_pd indication -> FW ready
-#   -> qcacld probe -> wlan0
+#   -> qcacld probe -> wlan0 -> hci_qcomm_init (retry!) -> hciattach-qca
+#   -> hci0 up -> bluetoothd
 #
 # Hard-won facts (each cost a boot cycle):
 #   - /dev/null was once a 35-byte REGULAR FILE and mdev leaves
@@ -32,6 +35,11 @@
 #   - Modem bounce without reboot: kill -9 the process holding
 #     /dev/subsys_modem (pm-service); its keepalive restarts it and the
 #     modem re-boots. wlan_pd + FW + probe all re-run cleanly.
+#   - The WCN3990 BT block is only released at chip POR when its rails are
+#     already on, so rfkill is unblocked at step 5b BEFORE the modem boots.
+#   - hci_qcomm_init fired the instant wlan0 appears can beat the BT block
+#     out of reset (all VS reads time out); it works ~60s later. Retries
+#     with backoff are mandatory, not cosmetic.
 set -x
 
 # --- -1. base device node sanity (BEFORE anything else) --------------------
@@ -164,16 +172,49 @@ for i in $(seq 1 60); do
 		setsid sh -c 'for i in $(seq 1 150); do
 			wpa_cli -i wlan0 status 2>/dev/null | grep -q "wpa_state=COMPLETED" && {
 				echo "associated, running udhcpc" >>/var/log/udhcpc-wlan0.log
-				udhcpc -i wlan0 -n -q >>/var/log/udhcpc-wlan0.log 2>&1
+				# 2026-09-09: a single udhcpc raced and lost its lease once
+				# (lease logged, no address on wlan0) - verify and retry
+				for try in 1 2 3; do
+					udhcpc -i wlan0 -n -q >>/var/log/udhcpc-wlan0.log 2>&1
+					ip -4 addr show wlan0 | grep -q inet && break
+					echo "udhcpc try $try: no address, retrying" >>/var/log/udhcpc-wlan0.log
+					sleep 2
+				done
 				exit 0
 			}
 			sleep 2
 		done
 		echo "gave up waiting for association" >>/var/log/udhcpc-wlan0.log' >/dev/null 2>&1 &
-		# BT SoC init (TLV rampatch+NVM over /dev/ttyHS0, chip FW is ready now)
+		# BT SoC init (TLV rampatch+NVM over /dev/ttyHS0), then kernel hci0.
+		# 2026-09-09: hci_qcomm_init fired the moment wlan0 appeared RACES the
+		# BT block (still settling after chip POR): all 3 VS reads timed out,
+		# but a manual run ~60s later succeeded. Retry with backoff, then
+		# attach the hci_uart QCA ldisc (needs the BT kernel fragment) and
+		# bring hci0 up for BlueZ.
 		if [ -x /vendor/bin/hci_qcomm_init ]; then
-			setsid sh -c "LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/hci_qcomm_init -e -N \
-				>>/var/log/hci_qcomm_init.log 2>&1" &
+			setsid sh -c "
+				for i in 1 2 3 4 5 6; do
+					LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/hci_qcomm_init -e -N \
+						>>/var/log/hci_qcomm_init.log 2>&1 && break
+					echo \"hci_qcomm_init attempt \$i failed, retry in 10s\" \
+						>>/var/log/hci_qcomm_init.log
+					sleep 10
+				done
+				if [ -x /root/hciattach-qca ]; then
+					setsid /root/hciattach-qca /dev/ttyHS0 3000000 \
+						>>/var/log/hciattach.log 2>&1
+					sleep 2
+					if [ -d /sys/class/bluetooth/hci0 ]; then
+						hciconfig hci0 up >>/var/log/hciattach.log 2>&1
+						hciconfig hci0 name nx563j-linux >>/var/log/hciattach.log 2>&1
+						mkdir -p /run/dbus
+						dbus-daemon --system --fork 2>/dev/null
+						[ -x /usr/lib/bluetooth/bluetoothd ] && \
+							setsid /usr/lib/bluetooth/bluetoothd \
+								>>/var/log/bluetoothd.log 2>&1 &
+					fi
+				fi
+			" >/dev/null 2>&1 &
 		fi
 		exit 0
 	fi
