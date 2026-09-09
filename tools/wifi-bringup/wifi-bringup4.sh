@@ -198,6 +198,10 @@ for i in $(seq 1 60); do
 					echo "udhcpc try $try: no address, retrying" >>/var/log/udhcpc-wlan0.log
 					sleep 2
 				done
+				# 2026-09-09: RTC has no working hwclock write and boots at
+				# 1970; once we have a lease, set the clock (aliyun NTP is
+				# reachable where pool.ntp.org is not) so HTTPS apk validates.
+				( ntpd -q -p ntp.aliyun.com >>/var/log/ntp.log 2>&1 ) &
 				exit 0
 			}
 			sleep 2
@@ -230,6 +234,11 @@ for i in $(seq 1 60); do
 						>>/var/log/hciattach.log 2>&1
 					sleep 3
 					if [ -d /sys/class/bluetooth/hci0 ]; then
+						# The NVM lottery hands out a random bdaddr
+						# tail each boot; pin a stable address (serial
+						# 392a99df) while the adapter is still down.
+						btmgmt --index 0 public-addr 00:A0:C6:39:2A:99 \
+							>>/var/log/hciattach.log 2>&1
 						for t in 1 2 3; do
 							hciconfig hci0 up >>/var/log/hciattach.log 2>&1 && break
 							sleep 5
