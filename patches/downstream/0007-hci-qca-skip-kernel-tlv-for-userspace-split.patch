@@ -1,7 +1,25 @@
 diff --git a/drivers/bluetooth/hci_qca.c b/drivers/bluetooth/hci_qca.c
-index e24de668..dd1d4f41 100644
+index e24de668..87a6fc78 100644
 --- a/drivers/bluetooth/hci_qca.c
 +++ b/drivers/bluetooth/hci_qca.c
+@@ -832,7 +832,7 @@ static struct sk_buff *qca_dequeue(struct hci_uart *hu)
+ 	return skb_dequeue(&qca->txq);
+ }
+ 
+-static uint8_t qca_get_baudrate_value(int speed)
++static uint8_t __maybe_unused qca_get_baudrate_value(int speed)
+ {
+ 	switch (speed) {
+ 	case 9600:
+@@ -866,7 +866,7 @@ static uint8_t qca_get_baudrate_value(int speed)
+ 	}
+ }
+ 
+-static int qca_set_baudrate(struct hci_dev *hdev, uint8_t baudrate)
++static int __maybe_unused qca_set_baudrate(struct hci_dev *hdev, uint8_t baudrate)
+ {
+ 	struct hci_uart *hu = hci_get_drvdata(hdev);
+ 	struct qca_data *qca = hu->priv;
 @@ -914,51 +914,23 @@ static int qca_setup(struct hci_uart *hu)
  	/* Patch downloading has to be done without IBS mode */
  	clear_bit(STATE_IN_BAND_SLEEP_ENABLED, &qca->flags);
