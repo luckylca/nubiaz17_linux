@@ -119,9 +119,16 @@ mkdir -p /bt_firmware
 mountpoint -q /bt_firmware || mount -o ro /dev/sde22 /bt_firmware 2>/dev/null
 
 # --- 6. QMI / peripheral daemons (keepalive) --------------------------------
+# NOTE: every inner "sh -c" below is pinned to /bin/sh with an explicit
+# PATH. With the section-0 PATH prepend (/vendor/bin:/system/bin first) a
+# bare "sh" resolves to Android's /system/bin/sh (mksh), whose PATH search
+# failed to find musl binaries by name at boot (2026-09-09: hciconfig and
+# wpa_cli both "inaccessible or not found" from inner subshells while
+# absolute-path invocations worked).
 kd() { # kd <name> [args...]
 	name=$1; shift
-	setsid sh -c "while true; do LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/$name \$@ >>/var/log/$name.log 2>&1; sleep 2; done" \
+	setsid /bin/sh -c "PATH=/bin:/sbin:/usr/bin:/usr/sbin; export PATH; \
+		while true; do LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/$name \$@ >>/var/log/$name.log 2>&1; sleep 2; done" \
 		>/dev/null 2>&1 &
 	echo "keepalive: $name"
 }
@@ -132,7 +139,7 @@ kd pd-mapper
 kd tftp_server
 # pm-service registers a HIDL service: vndservicemanager must exist first
 if ! pidof vndservicemanager >/dev/null 2>&1; then
-	setsid sh -c "LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/vndservicemanager /dev/vndbinder >>/var/log/vndsm.log 2>&1" \
+	setsid /bin/sh -c "LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/vndservicemanager /dev/vndbinder >>/var/log/vndsm.log 2>&1" \
 		>/dev/null 2>&1 &
 	sleep 1
 fi
@@ -142,7 +149,7 @@ kd ipacm
 sleep 2
 kd pm-proxy
 # cnss-daemon wants -n (no daemonize) -l (logcat); run foreground-logged
-setsid sh -c "while true; do LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/cnss-daemon -n -dd >>/var/log/cnss-daemon.log 2>&1; sleep 2; done" \
+setsid /bin/sh -c "while true; do LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/cnss-daemon -n -dd >>/var/log/cnss-daemon.log 2>&1; sleep 2; done" \
 	>/dev/null 2>&1 &
 echo "keepalive: cnss-daemon"
 
@@ -153,7 +160,7 @@ sleep 1
 
 # --- 8. boot the modem (hold open = powered) --------------------------------
 if [ ! -f /tmp/modem.hold.pid ] || ! kill -0 "$(cat /tmp/modem.hold.pid 2>/dev/null)" 2>/dev/null; then
-	setsid sh -c 'exec 9<>/dev/subsys_modem; echo $$ > /tmp/modem.hold.pid; while true; do sleep 3600; done' \
+	setsid /bin/sh -c 'exec 9<>/dev/subsys_modem; echo $$ > /tmp/modem.hold.pid; while true; do sleep 3600; done' \
 		>/dev/null 2>&1 &
 fi
 
@@ -168,8 +175,11 @@ for i in $(seq 1 60); do
 		pidof wpa_supplicant >/dev/null 2>&1 || \
 			setsid wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf -D nl80211 \
 				>>/var/log/wpa_supplicant.log 2>&1 &
-		# DHCP once associated (wait up to 5 min for slow first association)
-		setsid sh -c 'for i in $(seq 1 150); do
+		# DHCP once associated (wait up to 8 min for slow first association;
+		# cold 5GHz association took >5 min once and the 150x2s watcher lost
+		# the race by seconds)
+		setsid /bin/sh -c 'echo "=== boot $(date) ===" >>/var/log/udhcpc-wlan0.log
+		for i in $(seq 1 240); do
 			wpa_cli -i wlan0 status 2>/dev/null | grep -q "wpa_state=COMPLETED" && {
 				echo "associated, running udhcpc" >>/var/log/udhcpc-wlan0.log
 				# 2026-09-09: a single udhcpc raced and lost its lease once
@@ -192,7 +202,8 @@ for i in $(seq 1 60); do
 		# attach the hci_uart QCA ldisc (needs the BT kernel fragment) and
 		# bring hci0 up for BlueZ.
 		if [ -x /vendor/bin/hci_qcomm_init ]; then
-			setsid sh -c "
+			setsid /bin/sh -c "
+				PATH=/bin:/sbin:/usr/bin:/usr/sbin; export PATH
 				for i in 1 2 3 4 5 6; do
 					LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/hci_qcomm_init -e -N \
 						>>/var/log/hci_qcomm_init.log 2>&1 && break
