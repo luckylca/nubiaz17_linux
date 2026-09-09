@@ -2,6 +2,42 @@
 
 Last updated: 2026-09-09
 
+## 2026-09-09 mainline 6.0 bridge: PROVEN — kernel boots to userspace, UFS works
+
+The third of the "natural direction" items is now answered with on-device
+evidence. A mainline-oriented 6.0 kernel (LemonFan-maker/MSM8998-OH-KERNEL-6.0
+@ a07b78d, `nx563j_oh_defconfig`, CI artifact from run 34356060746) was packed
+into a signed boot image (`Image.gz-dtb` = Image.gz + msm8998-nubia-nx563j.dtb)
+with a minimal self-terminating bridge initramfs (`initramfs/init.mainline-bridge`),
+flashed to `boot`, and booted. Stage marks read back from the sde20 raw log
+afterwards:
+
+- `ML 20480: MAINLINE init alive; kernel 6.0.0-orionisli-ga07b78d35263` — the
+  mainline kernel reaches userspace on this hardware.
+- `ML 20482: sde20 present: UFS up (waited 0s)` — ufshcd-qcom + QMP UFS PHY come
+  up immediately; the full UFS partition table enumerates (sda/sde…).
+- `ML 20485: no ttyGS0 after 20s` — no USB device console, as predicted: the
+  mainline dtb sets the dwc3 `dr_mode = "host"`, so g_serial has no UDC to bind.
+- `ML 20487: window elapsed; powering off` — the init ran its full ~5-minute
+  heartbeat and powered the device off cleanly (no panic, no hang).
+
+The dumped mainline dmesg is clean: 5.8 GB memory available, QMP UFS PHY
+registered, `ufshcd` host up, `Run /init as init process`. So the mainline path
+is viable for boot + storage. What mainline still lacks for daily use: display
+(mdss/DSI for the JDI panel), touch, and Wi-Fi/BT (remoteproc-driven WCN3990) —
+those are the follow-up porting work, not bridge blockers.
+
+Bridge-test method (reusable):
+`INIT_SRC=initramfs/init.mainline-bridge OUT=…/bridge-initramfs.cpio.gz scripts/build_diag_initramfs.sh`
+then `INITRAMFS=…/bridge-initramfs.cpio.gz scripts/build_diag_boot.sh Image.gz-dtb out.img`.
+The bridge init logs to sde20 sectors **20480+** (marks), 20600 (dmesg), 21504
+(diag) — deliberately disjoint from the production init's 0-11/64/8192, because
+the production init rewrites its own marks on every boot and would otherwise
+overwrite the mainline evidence before it is read (that exact loss happened on
+the first run). This bootloader has no `fastboot boot`, and mainline cannot reach
+fastboot programmatically, so the restore is: device powers off → Vol-Down+Power
+→ `fastboot flash boot work/boot-ubuntu-signed.img`.
+
 ## 2026-09-09 Ubuntu 24.04 as a selectable boot target
 
 The end goal is a full Debian/Ubuntu userland with display, touch and
