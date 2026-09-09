@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  openbox-matchbox-keyboard.xml — dock the on-screen keyboard at the
+  bottom of the NX563J panel.
+
+  Merge the <application> block below into the <applications> section of
+  /etc/xdg/openbox/rc.xml, then run `openbox --reconfigure` (or restart
+  openbox) and relaunch matchbox-keyboard so it maps under the new rule.
+
+  Why title="Keyboard": this matchbox-keyboard build (Ubuntu noble,
+  plain Xlib) does not set a WM_CLASS of "matchbox-keyboard", so
+  <application name="matchbox-keyboard"> never matches and the window
+  falls back to smart placement at the top. The reliable handle is the
+  window title bar, which is literally "Keyboard". Verify with
+  `obxprop` (click the keyboard) or `xprop WM_CLASS` if x11-utils is
+  installed.
+
+  Geometry: panel is 1080x1920 portrait. Keyboard is 1080x430 placed at
+  y=1450 so its bottom edge (1880) clears the tint2 panel at the very
+  bottom. decor=no drops the title bar; layer=above keeps it on top so a
+  maximized window cannot hide it.
+-->
+<openbox_config>
+  <applications>
+    <application title="Keyboard">
+      <decor>no</decor>
+      <layer>above</layer>
+      <position force="yes">
+        <x>0</x>
+        <y>1450</y>
+      </position>
+      <size>
+        <width>1080</width>
+        <height>430</height>
+      </size>
+    </application>
+  </applications>
+</openbox_config>

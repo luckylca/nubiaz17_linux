@@ -841,3 +841,42 @@ and bluetoothd died with "D-Bus setup failed: Connection refused".
   third, truncated init run ("PF_ BUI" then EOF) no script path can
   have authored; the supervisor design tolerates exactly this class of
   ambiguity, which is the point.
+
+## 2026-09-09 touch desktop (X/fbdev) + the fb0 readback deadlock
+
+X desktop runs CPU-rendered on fbdev (no DRM/KMS, no GPU userspace on
+the downstream 4.4 kernel): xserver-xorg-core + fbdev + openbox + tint2
++ xterm (WenQuanYi Micro Hei CJK) + matchbox-keyboard. Touch reaches X
+through a STATIC InputDevice section + Option "AutoAddDevices" "no" —
+with no systemd/udev on the box, modern Xorg discovers input ONLY via
+udev, so without the static section xinput shows just the virtual core.
+
+- **Trap — no-udev X input**: see above. Fix in tools/desktop/xorg.conf
+  (touch0 = evdev on /dev/input/event4, GrabDevice, CorePointer).
+- **Trap — matchbox-keyboard has no -g here**: the Ubuntu noble build
+  exits with a usage error on `-g WxH+X+Y`. Dock it with an openbox
+  <application> rule instead (tools/desktop/openbox-matchbox-keyboard.xml).
+- **Trap — openbox <application name=> silently never matches**: this
+  matchbox-keyboard (plain Xlib) does not set WM_CLASS to
+  "matchbox-keyboard", so name=/class= matching missed and the keyboard
+  stayed at smart-placement top. Match on the window TITLE instead
+  (title="Keyboard" — read straight off its title bar). decor=no,
+  layer=above, position force=yes 0/1450, size 1080x430 clears tint2.
+- **Trap — obxprop / xprop availability**: xprop/xwininfo are NOT in the
+  base image (x11-utils missing); obxprop with no argument is
+  INTERACTIVE (waits for a click) and hangs an ssh heredoc. And any X
+  query needs XAUTHORITY pointed at the live cookie
+  (ps Xorg args -> -auth /tmp/serverauth.XXXX), else it returns empty
+  with the error swallowed by 2>/dev/null.
+- **Trap — repeated fb0 readback deadlocks mdss**: grabbing screenshots
+  with `dd if=/dev/fb0` in a loop, racing fbdash's FBIOPAN_DISPLAY and
+  Xorg's fbdev rendering, wedged the display pipeline: dsi_event_thread,
+  msm_mpm_work_fn, Xorg (flush_work) and four dd's all stuck D-state in
+  fb_open, load climbing past 9, screen frozen. D-state cannot be killed
+  (SIGKILL is deferred until the syscall returns, which never happens);
+  only a reboot clears it. Lesson: take fb0 screenshots SPARINGLY, one at
+  a time, never overlapping a pan/commit; if one dd stalls do not fire
+  more — each additional open queues on the same mdss lock. (Also: the
+  `cnd` Qualcomm connectivity daemon left over in the base image pins a
+  core at 100% — kill it; it serves no purpose outside Android.)
+
