@@ -348,3 +348,14 @@ Both GitHub Actions kernel paths are complete and bit-for-bit reproducible; see 
 - NX563J 6.0-oriented bridge: runs `34096169661` / `34098047345`, `Image.gz` SHA-256 `e5bf0e73...13510b4002f`.
 
 The deterministic signed kernel-only smoke image (`fc54ae2e...bf2a87`) is the current on-device test candidate.
+
+### 2026-09-10 mainline bridge config audit: display+touch drivers already in
+
+While the device awaited a power-cycle, audited the bridge kernel's config
+(work/mainline-bridge/kernel.config, LemonFan MSM8998-OH 6.0 @ a07b78d):
+- **CONFIG_DRM_PANEL_JDI_R63452=y** — the exact NX563J panel, built in
+- CONFIG_DRM_MSM=y stack incl. DSI host, FBDEV_EMULATION=y
+- RMI4 touchscreen: RMI4_CORE/I2C=m, F11/F12/2D_SENSOR=y — modules need
+  shipping in the initramfs (or flip to =y) before touch can work there
+Next bridge step when the device is free: boot it with an initramfs that
+loads rmi4 + msm drm and check for a DRM card/fb0 + evdev touch node.
