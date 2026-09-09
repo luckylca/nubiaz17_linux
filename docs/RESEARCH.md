@@ -880,3 +880,47 @@ udev, so without the static section xinput shows just the virtual core.
   `cnd` Qualcomm connectivity daemon left over in the base image pins a
   core at 100% — kill it; it serves no purpose outside Android.)
 
+
+## 2026-09-10 Wi-Fi monitor mode: PROVEN (qcacld runtime con_mode) + the crash that followed
+
+The WCN3990 qcacld-3.0 driver (v5.1.1.77V) is **built into** the kernel
+(CONFIG_MODULES off — /proc/modules is empty, rmmod impossible), so the
+classic Android recipe (rmmod wlan; modprobe wlan con_mode=N) does not
+apply. Two dead ends first:
+
+- nl80211: `iw phy` *advertises* monitor in supported iftypes and combos,
+  but `iw dev wlan0 set type monitor` (and `interface add type monitor`)
+  returns -22 — hdd's change_virtual_intf path rejects it.
+- iwpriv: 202 vendor commands, but the only monitor-related one is
+  `setMonChan` (channel/bandwidth for an already-monitor vdev).
+
+The working path is the driver's built-in **runtime mode switcher**:
+`/sys/module/wlan/parameters/con_mode` has a param setter
+(`con_mode_handler` → `__con_mode_handler` in wlan_hdd_main.c) that stops
+the WLAN modules, cleans up, and re-registers in the new mode — no reboot
+needed. Enum (qdf_types.h): MISSION=0, MONITOR=4, FTM=5, EPPING=8.
+Writing an invalid value (e.g. 2) fails -EINVAL but param_set_int has
+already stored it — `cat` then lies; trust `iw dev` type instead.
+
+Recipe (verified 2026-09-10): kill wpa_supplicant/dhclient, wlan0 down,
+`echo 4 > con_mode`, ~4 s later wlan0 is `type monitor`; up it, set a
+channel (`iw set channel 36` or `iwpriv wlan0 setMonChan 6 0` for 2.4G),
+capture with a plain AF_PACKET socket (tools/wifi-mon/moncap.py) — frames
+arrive radiotap-prefixed. Result: 318 frames/15 s on ch36 (beacon 145,
+probe-rsp 84, data 12, deauth 1...), and ch6 works too. Monitor-mode
+wakelock is taken by the driver automatically.
+
+**The expensive lesson — switching back wedged the whole phone.**
+`echo 0 > con_mode` returned EAGAIN ("Resource temporarily unavailable"):
+con_mode_handler refuses while `cds_wait_for_external_threads_completion()`
+sees external threads in the driver. Every retry EAGAIN'd, and a couple of
+minutes later the kernel died entirely — USB gadget dropped off the bus
+and the XBL crash handler came up as `QUSB__BULK` (19d2:ffae, Sahara
+memory-debug mode, streams HELLO, refuses HELLO_RESP/RESET/DONE — only a
+physical power-cycle recovers it). Open question: which thread kept the
+driver busy (the AF_PACKET capture socket was already closed; candidates
+are the rmnet/ipa unregister churn or a leftover nl80211 client). Until
+the restore path is understood, treat monitor mode as a **one-way trip
+per boot**: enter it only when you don't need STA Wi-Fi afterwards, and
+reboot to get mission mode back. Reboot is safe — con_mode is a boot-time
+default of 0, so Wi-Fi comes back normal on the next boot.
