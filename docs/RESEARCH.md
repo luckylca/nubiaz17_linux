@@ -737,3 +737,34 @@ more failure modes, one per boot cycle:
      `qca_set_baudrate` is fire-and-forget with a 300 ms settle.
    - *v3* (final): baud dance kept, rome skipped, **IBS left off** —
      exactly the stock `-ENOENT` path that the working manual boot took.
+
+## 2026-09-09 Bluetooth part 4: the Write-LE-Host-Supported lottery
+
+With patch 0007 v3 the unattended chain reached `hci0 UP RUNNING` on
+one cold boot — but the *next* cold boot failed every `hciconfig up`
+with EBUSY again, this time with the chip clearly answering (124
+events). A `btmon` trace (Alpine package `bluez-btmon`, also
+`bluez-btmgmt`) pinned it exactly:
+
+    > HCI Event: Command Complete (0x0e)
+          Write LE Host Supported (0x03|0x006d) ncmd 1
+            Status: Command Disallowed (0x0c)
+
+The userspace NVM download (`crnv21.bin` via `hci_qcomm_init`) leaves
+the chip with `LE_Host_Supported` already set — sometimes, depending
+on how the NVM write lands across a chip reset (the same lottery that
+randomizes the last three bdaddr octets each boot). The kernel's
+`__hci_init` then sends a redundant Write LE Host Supported, the chip
+answers 0x0c, `bt_to_errno` maps that to EBUSY
+(`net/bluetooth/lib.c:86`), and the whole open aborts.
+
+`patches/downstream/0008` makes the two touchpoints tolerant:
+`hci_cc_write_le_host_supported` treats 0x0c as success for flag
+state, and `hci_req_cmd_complete` no longer aborts the init request
+on that opcode+status. The bit is already in the desired state, so
+this is semantically a no-op.
+
+Also fixed in the bring-up script: `/run` is now a fresh tmpfs at step
+0. The persistent rootfs kept `/run/dbus/dbus.pid` across reboots, so
+`dbus-daemon --system --fork` refused to start ("pid file exists")
+and bluetoothd died with "D-Bus setup failed: Connection refused".

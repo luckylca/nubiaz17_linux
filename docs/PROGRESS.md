@@ -71,6 +71,34 @@ None. The first Linux userspace boots on real hardware with an interactive USB-n
 - Continue the long-term migration of NX563J-specific DTS/drivers from the 6.0-oriented bridge toward newer generic MSM8998 mainline.
 
 
+## 2026-09-09 Bluetooth UNATTENDED: cold boot to powered controller
+
+Cold boot now reaches a fully working Bluetooth stack with zero manual
+steps: Wi-Fi autostart (wlan0 associated, DHCP lease), `hci_qcomm_init`
+userspace TLV download (45 s settle + retry), `hciattach-qca` N_HCI/QCA
+ldisc, `hciconfig up` -> UP RUNNING, dbus + bluetoothd (BlueZ 5.76)
+powered, BLE scan live (70+ device events in 10 s).
+
+Two more kernel bugs stood between the manual proof and this
+(RESEARCH.md parts 3-4):
+
+- `patches/downstream/0007` (final form): `qca_setup` keeps the baud
+  dance (hci_qcomm_init leaves the chip at 115200; it follows the VS
+  set-baud to 3M), skips the kernel EDL rome download (the
+  userspace-initialized chip answers its version request 0x0c ->
+  EBUSY), and leaves IBS OFF (with IBS on, every post-setup frame
+  parks in tx_wait_q waiting for a WAKE_ACK that never comes ->
+  ETIMEDOUT).
+- `patches/downstream/0008`: the userspace NVM sometimes leaves
+  LE_Host_Supported already set (chip-reset lottery, same one that
+  randomizes the bdaddr tail); the chip then answers the kernel's
+  redundant write 0x0c -> EBUSY -> open aborts. The init request now
+  tolerates Command Disallowed for that command.
+
+Also: `/run` is now a tmpfs in the bring-up script (a stale
+`/run/dbus/dbus.pid` from the persistent rootfs silently killed
+bluetoothd autostart on one boot).
+
 ## 2026-09-09 Bluetooth COMPLETE: kernel hci0 up, BlueZ 5.76 scanning
 
 The BT kernel (CI run `34294947043`, fragment
