@@ -768,3 +768,28 @@ Also fixed in the bring-up script: `/run` is now a fresh tmpfs at step
 0. The persistent rootfs kept `/run/dbus/dbus.pid` across reboots, so
 `dbus-daemon --system --fork` refused to start ("pid file exists")
 and bluetoothd died with "D-Bus setup failed: Connection refused".
+
+## 2026-09-09 polish round: NTP, dashboard v2, and three new traps
+
+- **Clock**: the RTC rejects `hwclock -w` (EINVAL) and the system boots
+  at 1970, breaking TLS. Fix: `ntpd -q -p ntp.aliyun.com` once the
+  wlan0 lease lands (pool.ntp.org is unreachable from this network;
+  aliyun's NTP works). HTTPS apk repos validated after the fix.
+- **fbdash v2**: the framebuffer dashboard now also shows the wlan0
+  address, BT state (`UP` + bdaddr via hciconfig scrape), and the
+  wall-clock time. Compiled on-device (`gcc -O2 -static`).
+- **Trap — sysrq 'b' loses unsynced writes**: a script deployed over
+  ssh, read back with the right md5 (page cache), and then followed by
+  a sysrq-b hard reset silently reverts to its previous on-disk
+  version. The boot then runs the OLD script while every
+  post-boot check on the file reports the old md5. Always `sync`
+  before sysrq reboots.
+- **Trap — `btmgmt public-addr` before first HCIDEVUP deadlocks**: the
+  mgmt Set Public Address command waits for adapter setup, but setup
+  only runs at the first `hciconfig up` — circular wait, the whole BT
+  boot block stalls. Pin the bdaddr (if ever needed) only after the
+  adapter is up and bluetoothd is running.
+- **Trap — `hciconfig down`+`up` wedges the 4.4 hci_uart close path**:
+  the next open times out (110) and only a reboot recovers. Same
+  family as "never kill hciattach": the UART ldisc must be opened
+  once and left alone.

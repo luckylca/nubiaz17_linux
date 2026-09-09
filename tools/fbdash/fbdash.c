@@ -21,6 +21,7 @@
 #include <sys/socket.h>
 #include <sys/statvfs.h>
 #include <sys/utsname.h>
+#include <time.h>
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -100,20 +101,45 @@ static void read_first_line(const char *path, char *out, size_t n)
 		*nl = 0;
 }
 
-static void usb0_addr(char *out, size_t n)
+static void iface_addr(const char *ifname, char *out, size_t n)
 {
 	int s = socket(AF_INET, SOCK_DGRAM, 0);
 	struct ifreq ifr;
-	snprintf(ifr.ifr_name, IFNAMSIZ, "usb0");
+	snprintf(ifr.ifr_name, IFNAMSIZ, "%s", ifname);
 	if (s < 0 || ioctl(s, SIOCGIFADDR, &ifr) < 0) {
-		snprintf(out, n, "usb0: down");
+		snprintf(out, n, "%s: down", ifname);
 		if (s >= 0)
 			close(s);
 		return;
 	}
 	struct sockaddr_in *sa = (struct sockaddr_in *)&ifr.ifr_addr;
-	snprintf(out, n, "usb0: %s", inet_ntoa(sa->sin_addr));
+	snprintf(out, n, "%s: %s", ifname, inet_ntoa(sa->sin_addr));
 	close(s);
+}
+
+static void bt_status(char *out, size_t n)
+{
+	/* hciconfig output: "BD Address: XX:..  ACL MTU ..." and a line
+	 * that is "UP RUNNING" when the adapter is up. */
+	FILE *p = popen("hciconfig hci0 2>/dev/null", "r");
+	char buf[256], addr[64] = "";
+	int up = 0;
+	if (!p) {
+		snprintf(out, n, "bt     unknown");
+		return;
+	}
+	while (fgets(buf, sizeof(buf), p)) {
+		char *a;
+		if (strstr(buf, "UP RUNNING"))
+			up = 1;
+		if ((a = strstr(buf, "BD Address:")))
+			sscanf(a + 11, "%63s", addr);
+	}
+	pclose(p);
+	if (!addr[0])
+		snprintf(out, n, "bt     no hci0");
+	else
+		snprintf(out, n, "bt     %s %s", up ? "UP" : "down", addr);
 }
 
 static int port22_listening(void)
@@ -221,11 +247,20 @@ int main(void)
 			draw_text(1, row++, buf, FG);
 		}
 
-		usb0_addr(tmp, sizeof(tmp));
+		iface_addr("usb0", tmp, sizeof(tmp));
+		draw_text(1, row++, tmp, FG);
+		iface_addr("wlan0", tmp, sizeof(tmp));
+		draw_text(1, row++, tmp, FG);
+		bt_status(tmp, sizeof(tmp));
 		draw_text(1, row++, tmp, FG);
 		snprintf(buf, sizeof(buf), "ssh    %s :22",
 			 port22_listening() ? "listening" : "DOWN");
 		draw_text(1, row++, buf, port22_listening() ? FG : 0x000000ff);
+
+		time_t now = time(NULL);
+		struct tm *lt = localtime(&now);
+		strftime(tmp, sizeof(tmp), "date   %Y-%m-%d %H:%M", lt);
+		draw_text(1, row++, tmp, FG);
 
 		hr(row);
 		row += 1;
