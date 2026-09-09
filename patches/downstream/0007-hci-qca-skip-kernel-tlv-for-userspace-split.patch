@@ -2,6 +2,15 @@ diff --git a/drivers/bluetooth/hci_qca.c b/drivers/bluetooth/hci_qca.c
 index e24de668..def72878 100644
 --- a/drivers/bluetooth/hci_qca.c
 +++ b/drivers/bluetooth/hci_qca.c
+@@ -463,7 +463,7 @@ static int qca_setup(struct hci_uart *hu)
+ 	return 0;
+ }
+
+-static void qca_debugfs_init(struct hci_dev *hdev)
++static void __maybe_unused qca_debugfs_init(struct hci_dev *hdev)
+ {
+ 	struct hci_uart *hu = hci_get_drvdata(hdev);
+ 	struct qca_data *qca = hu->priv;
 @@ -944,21 +944,20 @@ static int qca_setup(struct hci_uart *hu)
  		hci_uart_set_baudrate(hu, speed);
  	}
