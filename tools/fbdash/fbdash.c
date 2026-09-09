@@ -53,6 +53,7 @@ static uint32_t *fb;
 static uint32_t stride, xres, yres;
 static int touch_fd = -1;
 static int desktop_req;
+static int autolaunch_left = -1; /* secs until auto-desktop; -1 = off */
 
 static void px(uint32_t x, uint32_t y, uint32_t c)
 {
@@ -211,6 +212,7 @@ static void touch_poll(void)
 					if ((uint32_t)tx >= b->x && (uint32_t)tx < b->x + b->w &&
 					    (uint32_t)ty >= b->y && (uint32_t)ty < b->y + b->h) {
 						int bl;
+						autolaunch_left = -1; /* user took over; cancel auto-desktop */
 						switch (b->act) {
 						case ACT_DESKTOP:
 							desktop_req = 1;
@@ -373,6 +375,14 @@ int main(void)
 	buttons_layout();
 	touch_open();
 
+	/* Boot straight into the desktop after a short idle countdown; any
+	 * button tap cancels it so the dashboard stays up on demand. Only the
+	 * boot-time fbdash auto-launches: desktop.sh re-runs us with
+	 * FBDASH_NOAUTOLAUNCH=1 when an X session ends, so a desktop that
+	 * fails to start cannot trap us in a launch/fail/relaunch loop. */
+	if (getenv("FBDASH_NOAUTOLAUNCH") == NULL)
+		autolaunch_left = 8;
+
 	struct pollfd pfd = { .fd = touch_fd, .events = POLLIN };
 	int tick = 0;
 
@@ -385,6 +395,8 @@ int main(void)
 		} else {
 			sleep(1);
 		}
+		if (autolaunch_left > 0 && --autolaunch_left == 0)
+			desktop_req = 1;
 		if (desktop_req) {
 			start_desktop();
 			if (desktop_req) /* handover confirmed */
@@ -472,6 +484,13 @@ int main(void)
 		row += 1;
 		draw_text(1, row++, "display: JDI R63452 cmd", FG);
 		draw_text(1, row++, "touch:   synaptics rmi4 OK", FG);
+
+		if (autolaunch_left > 0) {
+			snprintf(buf, sizeof(buf),
+				 "entering desktop in %ds", autolaunch_left);
+			draw_text(1, row++, buf, HDR);
+			draw_text(1, row++, "(tap a button to stay here)", FG);
+		}
 
 		draw_buttons();
 

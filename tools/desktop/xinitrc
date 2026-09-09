@@ -1,18 +1,23 @@
 #!/bin/sh
-# ~/.xinitrc — NX563J touch desktop session.
-# openbox WM + tint2 panel + xterm + on-screen keyboard; everything
-# reachable by finger.
+# ~/.xinitrc — NX563J touch desktop session (LXDE).
 #
-# NOTE: this build of matchbox-keyboard does NOT support a -g geometry
-# flag (it exits with a usage error). The keyboard is docked at the
-# bottom of the panel by an openbox application rule instead — see
-# openbox-matchbox-keyboard.xml in this directory, which is merged into
-# /etc/xdg/openbox/rc.xml (matches the window title "Keyboard").
+# Boots into a full LXDE desktop (lxpanel start-menu/taskbar + openbox WM +
+# pcmanfm desktop icons/file manager) — a recognizable "normal PC Linux
+# desktop", CPU-rendered on fbdev (no GL). Touch is the pointer (evdev
+# touch0 in xorg.conf); onboard provides the on-screen keyboard.
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export XDG_CURRENT_DESKTOP=LXDE
+export XDG_SESSION_DESKTOP=LXDE
 
-xsetroot -solid "#203040" 2>/dev/null
-xterm -geometry 60x20+20+20 -fa "WenQuanYi Micro Hei" -fs 14 &
-tint2 &
-# on-screen keyboard; openbox docks it at the bottom via the rc.xml rule
-matchbox-keyboard &
-exec openbox
+xsetroot -solid "#2a3a4a" 2>/dev/null
+
+# On-screen keyboard (docks itself; tap the keyboard icon to summon).
+onboard >/var/log/onboard.log 2>&1 &
+
+# LXDE session. dbus-launch provides the session bus lxsession wants in our
+# systemd-free environment; fall back to bare startlxde if it is missing.
+if command -v dbus-launch >/dev/null 2>&1; then
+  exec dbus-launch --exit-with-session startlxde
+else
+  exec startlxde
+fi

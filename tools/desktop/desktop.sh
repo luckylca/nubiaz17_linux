@@ -30,4 +30,8 @@ startx >/var/log/X.log 2>&1
 
 # session over: bring the dashboard back
 exec 9<&-
-setsid /root/fbdash/fbdash >/var/log/fbdash.log 2>&1 &
+# Restart the dashboard with auto-launch disabled: the desktop session just
+# ended (or failed), so we must not immediately re-enter it — that would
+# trap a failing desktop in a launch/fail/relaunch loop. The user can still
+# tap DESKTOP to re-enter by hand.
+FBDASH_NOAUTOLAUNCH=1 setsid /root/fbdash/fbdash >/var/log/fbdash.log 2>&1 &

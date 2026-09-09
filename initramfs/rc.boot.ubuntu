@@ -37,3 +37,7 @@ fi
 # Wi-Fi + BT bring-up in background (proven recipe; ~3-4 min to wlan0 +
 # DHCP + NTP + hci0 + bluetoothd).
 [ -x /root/wifi-bringup4.sh ] && setsid sh -c "/root/wifi-bringup4.sh > /tmp/wb4.log 2>&1" &
+
+# ACCA-style charge limiter: hold the battery between LOW/HIGH (default
+# 80/90) by toggling the qpnp-smb2 charging_enabled node. Runs forever.
+[ -x /root/charge-ctl.sh ] && setsid /root/charge-ctl.sh >/dev/null 2>&1 &
