@@ -13,18 +13,23 @@
 # with USB_CONFIGFS, and a choice allows exactly one winner; adding them
 # can silently disable configfs (and with it USB_CONFIGFS_UEVENT, which
 # leaves drivers/usb/gadget/configfs.c uncompilable in this tree).
+#
+# And: no RNDIS. rndis.o is linked into THREE composite objects in
+# drivers/usb/gadget/function/Makefile (usb_f_rndis, usb_f_gsi,
+# usb_f_qcrndis). The defconfig already enables F_GSI (modem tethering),
+# so enabling USB_F_RNDIS too makes rndis.o multi-composite: kbuild drops
+# its -DKBUILD_MODNAME flag and rndis.c fails to compile. The diag
+# initramfs uses NCM (defconfig) for the USB network link anyway.
 CONFIG_DEVTMPFS=y
 CONFIG_DEVTMPFS_MOUNT=y
 CONFIG_USB_U_SERIAL=y
 CONFIG_USB_U_ETHER=y
 CONFIG_USB_F_SERIAL=y
 CONFIG_USB_F_ACM=y
-CONFIG_USB_F_RNDIS=y
 CONFIG_USB_F_ECM=y
 # Pin the "USB Gadget Drivers" choice to configfs (defconfig already does;
 # repeated here so the choice winner is explicit).
 CONFIG_USB_CONFIGFS=y
 CONFIG_USB_CONFIGFS_SERIAL=y
 CONFIG_USB_CONFIGFS_ACM=y
-CONFIG_USB_CONFIGFS_RNDIS=y
 CONFIG_USB_CONFIGFS_ECM=y
