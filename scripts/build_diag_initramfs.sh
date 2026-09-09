@@ -11,7 +11,12 @@ ROOT="$(git rev-parse --show-toplevel)"
 BUSYBOX_DEB_URL="https://ftp.debian.org/debian/pool/main/b/busybox/busybox-static_1.35.0-4+deb12u1+b1_arm64.deb"
 BUSYBOX_DEB_SHA256="732c9135564fc71337e0e05fb4da4d11e6c28c1834bce3e405e575afef2a52f5"
 WORK="$ROOT/work/diag-initramfs"
-OUT="$WORK/diag-initramfs.cpio.gz"
+# INIT_SRC / OUT are overridable so a special-purpose initramfs (e.g. the
+# mainline bridge test) can be built to its own path without clobbering the
+# default diagnostic initramfs.
+INIT_SRC="${INIT_SRC:-$ROOT/initramfs/init}"
+OUT="${OUT:-$WORK/diag-initramfs.cpio.gz}"
+export OUT
 
 command -v python3 >/dev/null
 
@@ -35,7 +40,7 @@ tar -xf busybox-static_arm64.deb -C data-extract
 tar -xf data-extract/data.tar.xz -C root ./bin/busybox
 chmod 755 root/bin/busybox
 
-cp "$ROOT/initramfs/init" root/init
+cp "$INIT_SRC" root/init
 chmod 755 root/init
 
 # /init's shebang is /bin/sh, and the kernel resolves it before any userspace
@@ -57,7 +62,7 @@ import struct
 import sys
 
 root = "root"
-out_path = "diag-initramfs.cpio.gz"
+out_path = os.environ.get("OUT", "diag-initramfs.cpio.gz")
 
 def newc_header(ino, mode, uid, gid, nlink, mtime, filesize, devmajor,
                 devminor, rdevmajor, rdevminor, name):

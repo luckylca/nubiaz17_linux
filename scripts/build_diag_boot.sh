@@ -21,7 +21,9 @@ ROOT="$(git rev-parse --show-toplevel)"
 KERNEL="$1"
 OUTPUT="$2"
 BASE="${3:-$ROOT/backups/2026-09-07-baseline/boot.img}"
-INITRAMFS="$ROOT/work/diag-initramfs/diag-initramfs.cpio.gz"
+# INITRAMFS is overridable so a special-purpose initramfs (e.g. the mainline
+# bridge test) can be swapped in without rebuilding the default diag one.
+INITRAMFS="${INITRAMFS:-$ROOT/work/diag-initramfs/diag-initramfs.cpio.gz}"
 
 [[ -f "$KERNEL" ]] || { echo "Missing kernel: $KERNEL" >&2; exit 2; }
 [[ -f "$BASE" ]] || { echo "Missing baseline boot: $BASE" >&2; exit 2; }

@@ -1,0 +1,131 @@
+#!/bin/sh
+# NX563J mainline bridge-test initramfs init.
+#
+# One question only: does a mainline-oriented kernel (6.0, LemonFan MSM8998
+# OH tree) boot to userspace on the NX563J? The answer is read off the
+# recovery2 (sde20) raw-sector log afterwards from the known-good system.
+#
+# Deliberately minimal and self-terminating:
+#   - NO persistent-rootfs mount / chroot: that Ubuntu userspace is a
+#     downstream-kernel environment (fbdash on fb0, modem-driven wifi) and
+#     would only hang or spam here. The marks below are the deliverable.
+#   - USB console comes from the BUILT-IN g_serial gadget (USB_G_SERIAL=y,
+#     dwc3 dual-role), which binds a UDC without any configfs. The mainline
+#     config has USB_CONFIGFS but none of the CONFIGFS_* functions, so the
+#     NCM/ECM/mass-storage path from the downstream diag init is skipped.
+#   - After a fixed window it powers the device off (POWER_RESET=y) so the
+#     test never boot-loops and never drains the battery; the good Ubuntu
+#     boot image is then reflashed from fastboot.
+#
+# sde20 layout matches the downstream diag init: stage marks at sector
+# $SLOT (0,1,2,...), rolling dmesg at sector 64, a one-shot diag dump at
+# sector 8192. Read back with dd bs=512.
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+LOGDEV=""
+
+/bin/busybox --install -s /bin 2>/dev/null
+
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sysfs /sys 2>/dev/null
+
+# Mainline defconfig lacks DEVTMPFS_MOUNT: mount devtmpfs ourselves, with
+# the tmpfs+mdev fallback the downstream init proved.
+if ! mount -t devtmpfs devtmpfs /dev 2>/dev/null; then
+  mount -t tmpfs tmpfs /dev 2>/dev/null
+  mknod -m 600 /dev/console c 5 1 2>/dev/null
+  mknod -m 666 /dev/null c 1 3 2>/dev/null
+  mknod -m 644 /dev/kmsg c 1 11 2>/dev/null
+  mdev -s 2>/dev/null
+fi
+mknod -m 666 /dev/ptmx c 5 2 2>/dev/null
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts 2>/dev/null
+
+# recovery2 raw log channel (sde20, block 8:84) — appears only if the
+# mainline ufshcd-qcom + QMP UFS PHY brought the LUN up. This is the
+# primary proof channel.
+i=0
+while [ $i -lt 40 ]; do
+  if [ -b /dev/sde20 ]; then LOGDEV=/dev/sde20; break; fi
+  if [ ! -e /dev/sde20 ] && [ -d /sys/block/sde/sde20 ]; then
+    mknod /dev/sde20 b 8 84 2>/dev/null && LOGDEV=/dev/sde20 && break
+  fi
+  sleep 1
+  i=$((i + 1))
+done
+
+SLOT=0
+mark() {
+  [ -n "$LOGDEV" ] || return 0
+  echo "ML $SLOT: $*" | dd of="$LOGDEV" bs=512 seek=$SLOT conv=notrunc 2>/dev/null
+  SLOT=$((SLOT + 1))
+}
+
+mark "MAINLINE init alive; kernel $(uname -r 2>&1)"
+mark "cmdline: $(cat /proc/cmdline 2>/dev/null)"
+if [ -n "$LOGDEV" ]; then
+  mark "sde20 present: UFS up (waited ${i}s)"
+else
+  # No UFS log channel. The marks below still try, but the real fallback
+  # signal is the USB serial console + the power-off behaviour.
+  true
+fi
+mark "partitions: $(cat /proc/partitions 2>/dev/null | tr '\n' ' ')"
+mark "udc: $(ls /sys/class/udc 2>/dev/null | tr '\n' ' ')"
+
+# USB serial console: g_serial is built in and binds the first UDC at
+# kernel boot, so /dev/ttyGS0 may already exist; the host then sees a
+# cdc-acm device. Give it a short window in case the UDC probes late.
+i=0
+while [ $i -lt 20 ] && [ ! -e /dev/ttyGS0 ]; do
+  sleep 1
+  i=$((i + 1))
+done
+if [ -e /dev/ttyGS0 ]; then
+  mark "ttyGS0 present after ${i}s (g_serial bound); console on ttyGS0"
+  (
+    while true; do
+      echo "nx563j MAINLINE bridge shell (kernel $(uname -r))" > /dev/ttyGS0 2>/dev/null
+      setsid cttyhack sh -l <> /dev/ttyGS0 >&0 2>&1
+      sleep 1
+    done
+  ) &
+else
+  mark "no ttyGS0 after 20s (UDC/g_serial not bound)"
+fi
+
+# One-shot full diag dump to sde20.
+{
+  echo "=== uname ==="; uname -a
+  echo "=== cmdline ==="; cat /proc/cmdline
+  echo "=== partitions ==="; cat /proc/partitions
+  echo "=== block ==="; ls /sys/class/block 2>/dev/null
+  echo "=== udc ==="; ls /sys/class/udc 2>/dev/null
+  echo "=== net ==="; ifconfig -a 2>/dev/null
+  echo "=== mem ==="; head -3 /proc/meminfo
+} > /diag.txt 2>&1
+[ -n "$LOGDEV" ] && {
+  cat /diag.txt | dd of="$LOGDEV" bs=512 seek=8192 conv=notrunc 2>/dev/null
+  dmesg | dd of="$LOGDEV" bs=512 seek=64 conv=notrunc 2>/dev/null
+}
+mark "bridge diag written; heartbeat then poweroff"
+
+# Heartbeat dmesg to sde20 for a fixed window, then power off. The window
+# is long enough to grab the marks / drive the USB console and to attempt
+# `reboot2 bootloader` by hand; if that reaches fastboot the power-off
+# never fires. A plain reboot is avoided on purpose: with this image in
+# the boot partition a reboot would just re-run the test.
+i=0
+while [ $i -lt 16 ]; do
+  sleep 15
+  [ -n "$LOGDEV" ] && dmesg | dd of="$LOGDEV" bs=512 seek=64 conv=notrunc 2>/dev/null
+  i=$((i + 1))
+done
+
+mark "window elapsed; powering off"
+sync 2>/dev/null
+echo o > /proc/sysrq-trigger 2>/dev/null
+# If sysrq poweroff is unavailable, fall back to the kernel poweroff path.
+poweroff -f 2>/dev/null || reboot -f 2>/dev/null
+while true; do sleep 60; done
