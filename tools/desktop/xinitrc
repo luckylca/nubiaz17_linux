@@ -17,6 +17,14 @@ export XDG_SESSION_DESKTOP=LXDE
 
 xsetroot -solid "#2a3a4a" 2>/dev/null
 
+# This is a kiosk-style touch HMI: NEVER let X blank/DPMS the panel. The
+# fbdev driver answers DPMS-off with FBIOBLANK, which also clears mdss
+# autorefresh — the screen then stays black until someone re-arms and
+# re-kicks it by hand. Observed 10 min after boot (default 600 s timeout).
+xset s off 2>/dev/null
+xset s noblank 2>/dev/null
+xset -dpms 2>/dev/null
+
 # On-screen keyboard (docks itself; tap the keyboard icon to summon).
 onboard >/var/log/onboard.log 2>&1 &
 
