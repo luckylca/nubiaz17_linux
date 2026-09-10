@@ -32,9 +32,30 @@ rm -f /tmp/desk-ready
 export DISPLAY=:0
 
 # NOTE: do NOT run a FBIOPAN_DISPLAY ticker here — panning at 10 Hz while
-# Xorg sets up fbdev deadlocks the mdss dsi_event thread (D-state, screen
-# frozen, only a reboot clears it). The panel is fed by mdss autorefresh
+# Xorg runs deadlocks the mdss dsi_event thread (D-state, screen frozen,
+# only a reboot clears it). The panel is fed by mdss autorefresh
 # (msm_cmd_autorefresh_en, set in rc.boot.ubuntu) instead.
+#
+# But autorefresh only ACTIVATES on the next commit, and Xorg's fbdev
+# driver never commits — so the panel keeps showing the last fbdash frame
+# until exactly ONE pan lands. Worse, the fbdash→Xorg handoff can leave
+# the panel blanked, and a pan while blanked just fails EPERM. So: wait
+# for the X server, unblank, re-arm autorefresh, then kick ONCE. Bounded
+# retries on EPERM only (failed pans never reach the commit path).
+(
+  i=0
+  while ! pidof Xorg >/dev/null 2>&1 && [ $i -lt 60 ]; do
+    i=$((i + 1)); sleep 0.5 2>/dev/null || sleep 1
+  done
+  sleep 3 2>/dev/null || sleep 3
+  i=0
+  while [ $i -lt 5 ]; do
+    echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null
+    echo 1 > /sys/class/graphics/fb0/msm_cmd_autorefresh_en 2>/dev/null
+    python3 /root/fb-kick.py >/dev/null 2>&1 && break
+    i=$((i + 1)); sleep 2 2>/dev/null || sleep 2
+  done
+) &
 
 startx >/var/log/X.log 2>&1
 
