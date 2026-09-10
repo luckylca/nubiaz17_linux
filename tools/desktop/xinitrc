@@ -1,49 +1,33 @@
 #!/bin/sh
-# ~/.xinitrc — NX563J touch desktop session (LXDE).
+# ~/.xinitrc — NX563J touch desktop session (Ubuntu MATE).
 #
-# Boots into a full LXDE desktop (lxpanel start-menu/taskbar + openbox WM +
-# pcmanfm desktop icons/file manager) — a recognizable "normal PC Linux
-# desktop", CPU-rendered on fbdev (no GL). Touch is the pointer (evdev
-# touch0 in xorg.conf); onboard provides the on-screen keyboard.
+# MATE = the official Ubuntu MATE flavor desktop: marco WM, mate-panel
+# (top bar with brisk menu + clock, bottom bar with window list), caja
+# file manager. CPU-rendered on fbdev (no GL) — marco needs no compositor.
+# Touch is the pointer (evdev touch0 in xorg.conf); onboard provides the
+# on-screen keyboard (autostart entry in /root/.config/autostart).
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
-# We are spawned from a boot script (fbdash -> desktop.sh -> startx) whose
-# environment has no HOME — without this LXDE resolves HOME=/ and reads
-# //.config for everything (lxpanel ignores the real config, openbox reads
-# //.config/openbox/lxde-rc.xml, ...).
+# Spawned from fbdash -> desktop.sh -> startx with no HOME in env — without
+# this, MATE components resolve HOME=/ and read //.config for everything.
 export HOME=/root
 export USER=root
-export XDG_CURRENT_DESKTOP=LXDE
-export XDG_SESSION_DESKTOP=LXDE
+export XDG_CURRENT_DESKTOP=MATE
+export XDG_SESSION_DESKTOP=mate
 
-# Wallpaper: paint the root window directly. pcmanfm's desktop window
-# renders garbage vertical stripes on this fbdev server in EVERY mode
-# (image AND solid color), so we do not run a desktop client — setroot
-# draws the Ubuntu aubergine gradient straight into the root pixmap
-# (pure Xlib, retained after exit via _XROOTPMAP_ID).
+# Root-window gradient as a fallback backdrop; caja draws its own
+# background on top once the session is up.
 /root/setroot 2>/dev/null
-
-# 1080p on 5.5" is ~400 dpi — scale fonts/UI 1.5x or everything is
-# unreadably tiny. GTK picks Xft.dpi up from the X resource database.
 [ -f /root/.Xdefaults ] && xrdb -merge /root/.Xdefaults 2>/dev/null
 
-# This is a kiosk-style touch HMI: NEVER let X blank/DPMS the panel. The
-# fbdev driver answers DPMS-off with FBIOBLANK, which also clears mdss
-# autorefresh — the screen then stays black until someone re-arms and
-# re-kicks it by hand. Observed 10 min after boot (default 600 s timeout).
+# Kiosk-style touch HMI: NEVER let X blank/DPMS the panel — fbdev answers
+# DPMS-off with FBIOBLANK, which clears mdss autorefresh and the screen
+# stays black until re-armed by hand.
 xset s off 2>/dev/null
 xset s noblank 2>/dev/null
 xset -dpms 2>/dev/null
 
-# NOTE: onboard is NOT started here — before dbus-launch there is no
-# session bus and it falls back to reduced functionality. lxsession starts
-# it instead (@onboard in /etc/xdg/lxsession/LXDE/autostart).
-
-# LXDE session. startlxde is just a wrapper around lxsession and it went
-# missing when apt cascaded lxpolkit's removal into lxsession — call
-# lxsession directly, one less dependency. dbus-launch provides the session
-# bus lxsession wants in our systemd-free environment.
-if command -v dbus-launch >/dev/null 2>&1; then
-  exec dbus-launch --exit-with-session lxsession -s LXDE -e LXDE
-else
-  exec lxsession -s LXDE -e LXDE
-fi
+# mate-session starts marco / mate-panel / caja / mate-settings-daemon and
+# honors ~/.config/autostart (onboard lives there). dbus-launch provides
+# the session bus in our systemd-free rootfs. Ending the session (System
+# menu -> Log Out, or X dying) drops back to the fbdash dashboard.
+exec dbus-launch --exit-with-session mate-session

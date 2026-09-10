@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Onboard (touch keyboard)
+Exec=/root/onboard-setup.sh
+X-MATE-Autostart-enabled=true
