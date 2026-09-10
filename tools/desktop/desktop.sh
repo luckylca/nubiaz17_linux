@@ -13,6 +13,10 @@
 #
 # Log: /var/log/X.log
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
+# Kernel-init env has HOME=/ — without this startx looks for //.xinitrc and
+# the whole X session ends up with HOME=/ (lxpanel reads //.config etc).
+export HOME=/root
+export USER=root
 
 exec 9</dev/fb0 || exit 1
 touch /tmp/desk-ready
@@ -26,6 +30,12 @@ done
 rm -f /tmp/desk-ready
 
 export DISPLAY=:0
+
+# NOTE: do NOT run a FBIOPAN_DISPLAY ticker here — panning at 10 Hz while
+# Xorg sets up fbdev deadlocks the mdss dsi_event thread (D-state, screen
+# frozen, only a reboot clears it). The panel is fed by mdss autorefresh
+# (msm_cmd_autorefresh_en, set in rc.boot.ubuntu) instead.
+
 startx >/var/log/X.log 2>&1
 
 # session over: bring the dashboard back
