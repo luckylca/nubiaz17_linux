@@ -31,6 +31,19 @@ rm -f /tmp/desk-ready
 
 export DISPLAY=:0
 
+# Touch translator: the rmi4 device advertises BTN_TOOL_FINGER, so X's evdev
+# driver classifies it as a *touchpad* and drops BTN_TOUCH (taps never
+# click). touch-forward grabs event4 and re-emits a plain single-touch
+# stream on a uinput clone (/dev/input/nx563j-touch) that evdev treats as a
+# touchscreen. Only run it while X owns the screen — the grab would starve
+# fbdash of its own button taps.
+/root/touch-forward >/var/log/touch-forward.log 2>&1 &
+TF_PID=$!
+i=0
+while [ ! -e /dev/input/nx563j-touch ] && [ $i -lt 20 ]; do
+  i=$((i + 1)); sleep 0.5 2>/dev/null || sleep 1
+done
+
 # NOTE: do NOT run a FBIOPAN_DISPLAY ticker here — panning at 10 Hz while
 # Xorg runs deadlocks the mdss dsi_event thread (D-state, screen frozen,
 # only a reboot clears it). The panel is fed by mdss autorefresh
@@ -59,7 +72,8 @@ export DISPLAY=:0
 
 startx >/var/log/X.log 2>&1
 
-# session over: bring the dashboard back
+# session over: release the touch grab and bring the dashboard back
+kill $TF_PID 2>/dev/null
 exec 9<&-
 # Restart the dashboard with auto-launch disabled: the desktop session just
 # ended (or failed), so we must not immediately re-enter it — that would
