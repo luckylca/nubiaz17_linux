@@ -15,7 +15,11 @@ export USER=root
 export XDG_CURRENT_DESKTOP=LXDE
 export XDG_SESSION_DESKTOP=LXDE
 
-xsetroot -solid "#2a3a4a" 2>/dev/null
+xsetroot -solid "#2c001e" 2>/dev/null
+
+# 1080p on 5.5" is ~400 dpi — scale fonts/UI 1.5x or everything is
+# unreadably tiny. GTK picks Xft.dpi up from the X resource database.
+[ -f /root/.Xdefaults ] && xrdb -merge /root/.Xdefaults 2>/dev/null
 
 # This is a kiosk-style touch HMI: NEVER let X blank/DPMS the panel. The
 # fbdev driver answers DPMS-off with FBIOBLANK, which also clears mdss
@@ -25,8 +29,9 @@ xset s off 2>/dev/null
 xset s noblank 2>/dev/null
 xset -dpms 2>/dev/null
 
-# On-screen keyboard (docks itself; tap the keyboard icon to summon).
-onboard >/var/log/onboard.log 2>&1 &
+# NOTE: onboard is NOT started here — before dbus-launch there is no
+# session bus and it falls back to reduced functionality. lxsession starts
+# it instead (@onboard in /etc/xdg/lxsession/LXDE/autostart).
 
 # LXDE session. startlxde is just a wrapper around lxsession and it went
 # missing when apt cascaded lxpolkit's removal into lxsession — call

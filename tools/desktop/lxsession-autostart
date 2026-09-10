@@ -1,0 +1,7 @@
+# /etc/xdg/lxsession/LXDE/autostart — session autostart (runs with the
+# session D-Bus up, unlike xinitrc). xscreensaver is not installed; the
+# entry is harmless and left for completeness.
+@lxpanel --profile LXDE
+@pcmanfm --desktop --profile LXDE
+@xscreensaver -no-splash
+@onboard

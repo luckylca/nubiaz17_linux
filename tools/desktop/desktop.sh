@@ -37,7 +37,10 @@ export DISPLAY=:0
 # stream on a uinput clone (/dev/input/nx563j-touch) that evdev treats as a
 # touchscreen. Only run it while X owns the screen — the grab would starve
 # fbdash of its own button taps.
-/root/touch-forward >/var/log/touch-forward.log 2>&1 &
+# "cw" matches xorg.conf fbdev Rotate CW (landscape desktop): the daemon
+# re-maps coordinates itself because evdev's SwapAxes+InvertX is broken
+# (inverts with the pre-swap axis maximum).
+/root/touch-forward cw >/var/log/touch-forward.log 2>&1 &
 TF_PID=$!
 i=0
 while [ ! -e /dev/input/nx563j-touch ] && [ $i -lt 20 ]; do

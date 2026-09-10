@@ -18,6 +18,13 @@
 // Run only while the X desktop owns the screen (started/stopped by
 // desktop.sh): the grab would otherwise starve fbdash of its button taps.
 //
+// Usage: touch-forward [cw|ccw|none]
+//   Display rotation must match xorg.conf's fbdev "Rotate" option. With
+//   Rotate CW (landscape 1920x1080), a physical touch (px,py) maps to
+//   logical (ymax-py, px); CCW maps to (py, xmax-px). Doing the mapping
+//   here (and advertising the swapped axis ranges) is exact — evdev's own
+//   SwapAxes+InvertX is NOT (it inverts with the pre-swap axis maximum).
+//
 // Creates symlink /dev/input/nx563j-touch -> the virtual event node.
 #include <errno.h>
 #include <fcntl.h>
@@ -35,6 +42,9 @@
 
 static int ufd = -1;
 static volatile sig_atomic_t stop;
+static int rot; /* 0 = none, 1 = cw, 2 = ccw */
+static int phys_xmax, phys_ymax; /* sensor ranges */
+static int out_xmax, out_ymax;   /* advertised (possibly swapped) ranges */
 
 static void on_term(int sig) { (void)sig; stop = 1; }
 
@@ -47,6 +57,34 @@ static void emit(int type, int code, int value)
     ev.value = value;
     if (write(ufd, &ev, sizeof(ev)) < 0)
         perror("write uinput");
+}
+
+/* rotate a physical coordinate into logical (screen) space */
+static void rot_map(int px, int py, int *lx, int *ly)
+{
+    switch (rot) {
+    case 1:  /* cw:  logical = (ymax-py, px) */
+        *lx = phys_ymax - py;
+        *ly = px;
+        break;
+    case 2:  /* ccw: logical = (py, xmax-px) */
+        *lx = py;
+        *ly = phys_xmax - px;
+        break;
+    default:
+        *lx = px;
+        *ly = py;
+        break;
+    }
+}
+
+/* emit one translated absolute position frame */
+static void emit_pos(int px, int py)
+{
+    int lx, ly;
+    rot_map(px, py, &lx, &ly);
+    emit(EV_ABS, ABS_X, lx);
+    emit(EV_ABS, ABS_Y, ly);
 }
 
 /* locate the event node uinput just created (match by device name) */
@@ -75,8 +113,17 @@ static int find_and_link(void)
     return -1;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    if (argc > 1) {
+        if (strcmp(argv[1], "cw") == 0)
+            rot = 1;
+        else if (strcmp(argv[1], "ccw") == 0)
+            rot = 2;
+        else
+            rot = 0;
+    }
+
     signal(SIGTERM, on_term);
     signal(SIGINT, on_term);
 
@@ -93,6 +140,10 @@ int main(void)
         xmax = ai.maximum;
     if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), &ai) == 0)
         ymax = ai.maximum;
+    phys_xmax = xmax;
+    phys_ymax = ymax;
+    out_xmax = rot ? ymax : xmax;
+    out_ymax = rot ? xmax : ymax;
 
     ufd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
     if (ufd < 0) {
@@ -111,9 +162,9 @@ int main(void)
     memset(&uud, 0, sizeof(uud));
     snprintf(uud.name, UINPUT_MAX_NAME_SIZE, "nx563j-touch");
     uud.absmin[ABS_X] = 0;
-    uud.absmax[ABS_X] = xmax;
+    uud.absmax[ABS_X] = out_xmax;
     uud.absmin[ABS_Y] = 0;
-    uud.absmax[ABS_Y] = ymax;
+    uud.absmax[ABS_Y] = out_ymax;
     if (write(ufd, &uud, sizeof(uud)) != sizeof(uud)) {
         perror("uinput_user_dev");
         return 1;
@@ -130,8 +181,9 @@ int main(void)
         perror("EVIOCGRAB (is Xorg still holding " SRC_NODE "?)");
         return 1;
     }
-    fprintf(stderr, "touch-forward: grabbed %s, panel %dx%d\n",
-            SRC_NODE, xmax + 1, ymax + 1);
+    fprintf(stderr, "touch-forward: grabbed %s, panel %dx%d rot=%d out=%dx%d\n",
+            SRC_NODE, phys_xmax + 1, phys_ymax + 1, rot,
+            out_xmax + 1, out_ymax + 1);
 
     int down = 0, x = 0, y = 0, dirty = 0, btn = -1;
     while (!stop) {
@@ -159,8 +211,7 @@ int main(void)
         } else if (ev.type == EV_SYN && ev.code == SYN_REPORT) {
             /* flush one translated frame */
             if (btn == 1) {
-                emit(EV_ABS, ABS_X, x);
-                emit(EV_ABS, ABS_Y, y);
+                emit_pos(x, y);
                 emit(EV_KEY, BTN_TOUCH, 1);
                 emit(EV_SYN, SYN_REPORT, 0);
                 down = 1;
@@ -169,8 +220,7 @@ int main(void)
                 emit(EV_SYN, SYN_REPORT, 0);
                 down = 0;
             } else if (down && dirty) {
-                emit(EV_ABS, ABS_X, x);
-                emit(EV_ABS, ABS_Y, y);
+                emit_pos(x, y);
                 emit(EV_SYN, SYN_REPORT, 0);
             }
             btn = -1;
