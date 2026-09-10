@@ -6,6 +6,12 @@
 # desktop", CPU-rendered on fbdev (no GL). Touch is the pointer (evdev
 # touch0 in xorg.conf); onboard provides the on-screen keyboard.
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
+# We are spawned from a boot script (fbdash -> desktop.sh -> startx) whose
+# environment has no HOME — without this LXDE resolves HOME=/ and reads
+# //.config for everything (lxpanel ignores the real config, openbox reads
+# //.config/openbox/lxde-rc.xml, ...).
+export HOME=/root
+export USER=root
 export XDG_CURRENT_DESKTOP=LXDE
 export XDG_SESSION_DESKTOP=LXDE
 
@@ -14,10 +20,12 @@ xsetroot -solid "#2a3a4a" 2>/dev/null
 # On-screen keyboard (docks itself; tap the keyboard icon to summon).
 onboard >/var/log/onboard.log 2>&1 &
 
-# LXDE session. dbus-launch provides the session bus lxsession wants in our
-# systemd-free environment; fall back to bare startlxde if it is missing.
+# LXDE session. startlxde is just a wrapper around lxsession and it went
+# missing when apt cascaded lxpolkit's removal into lxsession — call
+# lxsession directly, one less dependency. dbus-launch provides the session
+# bus lxsession wants in our systemd-free environment.
 if command -v dbus-launch >/dev/null 2>&1; then
-  exec dbus-launch --exit-with-session startlxde
+  exec dbus-launch --exit-with-session lxsession -s LXDE -e LXDE
 else
-  exec startlxde
+  exec lxsession -s LXDE -e LXDE
 fi

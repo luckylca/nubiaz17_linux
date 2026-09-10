@@ -1,0 +1,104 @@
+# lxpanel <profile> config file. Manually editing is not recommended.
+# NX563J: factory /etc/xdg/lxpanel/LXDE/panels/panel, minimally adjusted:
+# finger-sized (height 56), launchers = file manager / terminal / on-screen
+# keyboard, volume+cpu dropped (no audio hw in Linux; saves space).
+
+Global {
+    edge=bottom
+    align=left
+    margin=0
+    widthtype=percent
+    width=100
+    height=56
+    transparent=0
+    tintcolor=#2b2b2b
+    alpha=230
+    setdocktype=1
+    setpartialstrut=1
+    autohide=0
+    heightwhenhidden=0
+    usefontcolor=1
+    fontcolor=#ffffff
+    background=1
+    backgroundfile=/usr/share/lxpanel/images/background.png
+}
+
+Plugin {
+    type = space
+    Config {
+        Size=6
+    }
+}
+
+Plugin {
+    type = menu
+    Config {
+        image=/usr/share/lxde/images/lxde-icon.png
+        system {
+        }
+        separator {
+        }
+        item {
+            command=run
+        }
+        separator {
+        }
+        item {
+            image=gnome-logout
+            command=logout
+        }
+    }
+}
+
+Plugin {
+    type = launchbar
+    Config {
+        Button {
+            id=pcmanfm.desktop
+        }
+        Button {
+            id=lxterminal.desktop
+        }
+        Button {
+            id=onboard.desktop
+        }
+    }
+}
+
+Plugin {
+    type = space
+    Config {
+        Size=6
+    }
+}
+
+Plugin {
+    type = taskbar
+    expand=1
+    Config {
+        tooltips=1
+        IconsOnly=0
+        AcceptSkipPager=1
+        ShowIconified=1
+        ShowMapped=1
+        ShowAllDesks=0
+        UseMouseWheel=1
+        UseUrgencyHint=1
+        FlatButton=0
+        MaxTaskWidth=260
+        spacing=4
+    }
+}
+
+Plugin {
+    type = tray
+}
+
+Plugin {
+    type = dclock
+    Config {
+        ClockFmt=%R
+        TooltipFmt=%A %x
+        BoldFont=1
+    }
+}
