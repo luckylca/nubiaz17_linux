@@ -42,8 +42,15 @@ while true; do
       echo 0 > "$PS/charging_enabled" 2>/dev/null \
         && log "STOP  charging at ${cap}% (>= $HIGH)"
     elif [ "$en" = "0" ] && [ "$cap" -le "$LOW" ]; then
-      echo 1 > "$PS/charging_enabled" 2>/dev/null \
-        && log "START charging at ${cap}% (<= $LOW)"
+      # never fight a thermal hold: thermal-ctl.sh drops this file when it
+      # forces charging off (CRIT SoC / hot battery) and removes it when
+      # the part has cooled; only then may we resume on our own hysteresis
+      if [ -e /tmp/thermal-hold ]; then
+        :
+      else
+        echo 1 > "$PS/charging_enabled" 2>/dev/null \
+          && log "START charging at ${cap}% (<= $LOW)"
+      fi
     fi
   fi
   sleep "$INTERVAL"
