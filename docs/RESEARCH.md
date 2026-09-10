@@ -924,3 +924,44 @@ the restore path is understood, treat monitor mode as a **one-way trip
 per boot**: enter it only when you don't need STA Wi-Fi afterwards, and
 reboot to get mission mode back. Reboot is safe — con_mode is a boot-time
 default of 0, so Wi-Fi comes back normal on the next boot.
+
+## 2026-09-10 LXDE session debugging — HOME=/, lxpolkit, lxpanel sizing
+
+A boot-chain X session (rc.boot.ubuntu -> fbdash -> desktop.sh -> startx)
+inherits the **kernel init environment: HOME=/**. startx then reads
+//.xinitrc (not /root/.xinitrc) and the entire session runs with HOME=/,
+which makes lxpanel/pcmanfm/openbox read //.config and fall back to
+system defaults — visible symptom: a 224x26 panel sliver despite a
+correct user config. Fix at TWO levels (belt and braces): export
+HOME=/root in BOTH desktop.sh (before startx) and .xinitrc.
+
+Other traps hit this session:
+
+- **lxpolkit "No session for pid N" dialog**: lxpolkit (polkit agent) pops
+  a modal error because there is no logind session. It is NOT (only) an
+  xdg-autostart entry — lxsession launches it itself via
+  `polkit/command=lxpolkit` in /etc/xdg/lxsession/LXDE/desktop.conf.
+  Fix: `polkit/command=` (empty). Masking /etc/xdg/autostart alone is
+  not enough.
+- **`apt-get remove lxpolkit` cascades into removing lxsession** (and the
+  lxde metapackage bits) — suddenly `startlxde` vanishes. Reinstall
+  lxsession with --no-install-recommends; .xinitrc now execs
+  `lxsession -s LXDE` directly and no longer depends on the startlxde
+  wrapper at all.
+- **libinput cannot replace evdev**: without udev it fails with
+  "udev device never initialized" / "Invalid path /dev/input/event4".
+  evdev attaches the synaptics as core pointer; the "[dix] touch0:
+  unable to find touch point 0" spam is the XI2.2 MT path complaining
+  but tap-as-click still works.
+- **pkill -f "desktop.sh" over ssh kills your own remote shell** — the
+  pattern matches the shell carrying the command. Break the string
+  ("desk""top.sh") when pkilling session scripts.
+- **xwd/xwininfo auth**: the Xorg `-auth /tmp/serverauth.*` file is not
+  usable by clients; use XAUTHORITY=/root/.Xauthority (startx merges
+  the cookie there) — and HOME must be /root or tools look in //.
+- **lxpanel 0.10 config**: background=1 paints backgroundfile (an image),
+  tintcolor alone gives a white panel. Base custom panels on the factory
+  /etc/xdg/lxpanel/LXDE/panels/panel, not on memory.
+- Rebooting the whole phone is cheaper than killing a duplicated
+  session tree: lxsession auto-restarts its @-autostart children, so
+  half-killed sessions keep respawning panels.
