@@ -3,6 +3,10 @@
 #
 # Ubuntu-style diagonal gradient (dark aubergine -> aubergine -> orange
 # glow), 1920x1080 landscape. Pure stdlib (zlib), no image assets, no PIL.
+#
+# IMPORTANT: this is RGBA (color type 6), not RGB. pcmanfm 1.3 renders an
+# RGB (type 2) PNG as garbage vertical stripes on this build (observed on
+# the NX563J, libfm 1.3.2 / gdk-pixbuf 2.42.10); RGBA renders correctly.
 import struct
 import zlib
 
@@ -23,7 +27,10 @@ for y in range(H):
         else:
             f = (t - 0.65) / 0.35
             a, b = C2, C3
-        row += bytes(int(a[i] + (b[i] - a[i]) * f) for i in range(3))
+        row += bytes((int(a[0] + (b[0] - a[0]) * f),
+                      int(a[1] + (b[1] - a[1]) * f),
+                      int(a[2] + (b[2] - a[2]) * f),
+                      255))
     rows.append(bytes(row))
 raw = b"".join(rows)
 
@@ -34,7 +41,7 @@ def chunk(typ, data):
 
 
 png = (b"\x89PNG\r\n\x1a\n"
-       + chunk(b"IHDR", struct.pack(">IIBBBBB", W, H, 8, 2, 0, 0, 0))
+       + chunk(b"IHDR", struct.pack(">IIBBBBB", W, H, 8, 6, 0, 0, 0))
        + chunk(b"IDAT", zlib.compress(raw, 6))
        + chunk(b"IEND", b""))
 with open("/usr/share/backgrounds/nx-ubuntu.png", "wb") as f:

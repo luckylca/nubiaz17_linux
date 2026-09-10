@@ -15,7 +15,12 @@ export USER=root
 export XDG_CURRENT_DESKTOP=LXDE
 export XDG_SESSION_DESKTOP=LXDE
 
-xsetroot -solid "#2c001e" 2>/dev/null
+# Wallpaper: paint the root window directly. pcmanfm's desktop window
+# renders garbage vertical stripes on this fbdev server in EVERY mode
+# (image AND solid color), so we do not run a desktop client — setroot
+# draws the Ubuntu aubergine gradient straight into the root pixmap
+# (pure Xlib, retained after exit via _XROOTPMAP_ID).
+/root/setroot 2>/dev/null
 
 # 1080p on 5.5" is ~400 dpi — scale fonts/UI 1.5x or everything is
 # unreadably tiny. GTK picks Xft.dpi up from the X resource database.

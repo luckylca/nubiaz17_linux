@@ -1,7 +1,12 @@
 # /etc/xdg/lxsession/LXDE/autostart — session autostart (runs with the
 # session D-Bus up, unlike xinitrc). xscreensaver is not installed; the
 # entry is harmless and left for completeness.
+#
+# pcmanfm --desktop is DISABLED: its desktop window renders garbage
+# vertical stripes on this fbdev server in every wallpaper mode (even
+# solid color). The root-window gradient from setroot (xinitrc) is the
+# wallpaper instead. pcmanfm the file manager stays on the launchbar.
 @lxpanel --profile LXDE
-@pcmanfm --desktop --profile LXDE
+#@pcmanfm --desktop --profile LXDE
 @xscreensaver -no-splash
 @onboard
