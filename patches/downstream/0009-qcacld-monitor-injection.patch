@@ -1,3 +1,15 @@
+diff --git a/drivers/staging/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h b/drivers/staging/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h
+index 98dcffe8..3e262adb 100644
+--- a/drivers/staging/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h
++++ b/drivers/staging/qcacld-3.0/core/hdd/inc/wlan_hdd_tx_rx.h
+@@ -50,6 +50,7 @@
+ #define SME_QOS_UAPSD_CFG_VO_CHANGED_MASK     0xF8
+ 
+ netdev_tx_t hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev);
++netdev_tx_t hdd_mon_tx(struct sk_buff *skb, struct net_device *dev);
+ void hdd_tx_timeout(struct net_device *dev);
+ 
+ QDF_STATUS hdd_init_tx_rx(hdd_adapter_t *pAdapter);
 diff --git a/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
 index 207b6761..0d55e734 100644
 --- a/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
