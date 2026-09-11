@@ -52,18 +52,10 @@ index 207b6761..0d55e734 100644
  				      WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
  		/* fallthrough */
 diff --git a/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c b/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
-index 24a2b12b..372b4bab 100644
+index 24a2b12b..02a589b4 100644
 --- a/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
 +++ b/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
-@@ -52,6 +52,7 @@
- #include <wlan_hdd_tsf.h>
- #include <net/tcp.h>
- #include "wma_api.h"
-+#include "wma.h"
- 
- #ifdef QCA_LL_TX_FLOW_CONTROL_V2
- /*
-@@ -852,6 +853,51 @@ static inline bool hdd_is_tx_allowed(struct sk_buff *skb, uint8_t peer_id)
+@@ -852,6 +852,51 @@ static inline bool hdd_is_tx_allowed(struct sk_buff *skb, uint8_t peer_id)
  	return false;
  }
  
@@ -116,7 +108,7 @@ index 24a2b12b..372b4bab 100644
   * __hdd_hard_start_xmit() - Transmit a frame
   * @skb: pointer to OS packet (sk_buff)
 diff --git a/drivers/staging/qcacld-3.0/core/wma/inc/wma.h b/drivers/staging/qcacld-3.0/core/wma/inc/wma.h
-index 79f81201..d460d2fa 100644
+index 79f81201..1c87c921 100644
 --- a/drivers/staging/qcacld-3.0/core/wma/inc/wma.h
 +++ b/drivers/staging/qcacld-3.0/core/wma/inc/wma.h
 @@ -2586,6 +2586,11 @@ void wma_register_packetdump_callback(
@@ -124,13 +116,29 @@ index 79f81201..d460d2fa 100644
  		tp_wma_packetdump_cb wma_mgmt_rx_packetdump_cb);
  void wma_deregister_packetdump_callback(void);
 +
-+/* Monitor-mode frame injection (NX563J NetHunter) */
++/* Monitor-mode frame injection (NX563J NetHunter) — also in wma_api.h */
 +QDF_STATUS wma_mon_inject_frame(uint8_t mon_vdev_id, const uint8_t *frame,
 +				uint16_t frame_len);
 +void wma_mon_inject_cleanup(void);
  void wma_update_sta_inactivity_timeout(tp_wma_handle wma,
  		struct sme_sta_inactivity_timeout  *sta_inactivity_timer);
  
+diff --git a/drivers/staging/qcacld-3.0/core/wma/inc/wma_api.h b/drivers/staging/qcacld-3.0/core/wma/inc/wma_api.h
+index de42a3b3..a98e6e13 100644
+--- a/drivers/staging/qcacld-3.0/core/wma/inc/wma_api.h
++++ b/drivers/staging/qcacld-3.0/core/wma/inc/wma_api.h
+@@ -184,6 +184,11 @@ int wma_clear_target_wake_up(void);
+ QDF_STATUS wma_suspend_target(WMA_HANDLE handle, int disable_target_intr);
+ void wma_target_suspend_acknowledge(void *context, bool wow_nack);
+ void wma_handle_initial_wake_up(void);
++
++/* Monitor-mode frame injection (NX563J NetHunter) */
++QDF_STATUS wma_mon_inject_frame(uint8_t mon_vdev_id, const uint8_t *frame,
++				uint16_t frame_len);
++void wma_mon_inject_cleanup(void);
+ int wma_bus_resume(void);
+ QDF_STATUS wma_resume_target(WMA_HANDLE handle);
+ QDF_STATUS wma_disable_wow_in_fw(WMA_HANDLE handle);
 diff --git a/drivers/staging/qcacld-3.0/core/wma/src/wma_mgmt.c b/drivers/staging/qcacld-3.0/core/wma/src/wma_mgmt.c
 index 15635db0..43b5cad2 100644
 --- a/drivers/staging/qcacld-3.0/core/wma/src/wma_mgmt.c
