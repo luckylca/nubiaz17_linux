@@ -965,3 +965,53 @@ Other traps hit this session:
 - Rebooting the whole phone is cheaper than killing a duplicated
   session tree: lxsession auto-restarts its @-autostart children, so
   half-killed sessions keep respawning panels.
+
+## 2026-09-11 qcacld-3.0 monitor-mode injection — mechanism research (Loukious port)
+
+Goal: userspace raw 802.11 frame -> qcacld driver -> firmware -> RF TX,
+verified by an independent sniffer.  Research on work/lineage-kernel
+(cda6a278, qcacld v5.1.1.77V / wlan-cmn.driver.lnx.1.0 v5.1.1.2E):
+
+- Why monitor RX-only by default: in QDF_GLOBAL_MONITOR_MODE the netdev
+  gets `wlan_mon_drv_ops` (wlan_hdd_main.c) which has no ndo_start_xmit
+  ("doesnot Tx").  nl80211 mgmt_tx is a dead end in monitor mode
+  (__wlan_hdd_mgmt_tx needs a STA/SAP session; none exist in con_mode=4).
+- The official reference: Loukious' QCACLD-3.0 injection patch shipped
+  with Kali 2026.1 (github.com/Loukious/android_kernel_xiaomi_sm8150
+  commit 8f0698bf92abef517980fe9a84615cd8bad16622, 13k lines with test
+  scaffolding).  Core mechanism extracted and ported minimal (~450 lines):
+  1. `wlan_mon_drv_ops.ndo_start_xmit = hdd_mon_tx` — strip radiotap,
+     hand raw 802.11 to WMA.
+  2. **Firmware rejects mgmt TX on MONITOR vdevs** (falls to beacon-only
+     path -> DISCARD).  Injection requires a hidden **STA-type** helper
+     vdev: VDEV_CREATE(STA) -> msleep(150) -> VDEV_START(monitor channel)
+     -> msleep(150) -> PEER_CREATE(self, locally-administered MAC) ->
+     msleep(100).  **No VDEV_UP** (STA vdev_up asserts without BSS peer).
+     AP type would crash FW beacon TX offload (no beacon template).
+  3. Submit with WMI_MGMT_TX_SEND_CMDID (send_mgmt_cmd_tlv) naming the
+     helper vdev, chanfreq = monitor channel, desc from wmi_desc_get();
+     completion handler wma_process_mgmt_tx_completion unmaps the nbuf
+     and calls our tx_cmpl_cb which frees it.  If firmware never
+     completes, the 50-entry desc pool self-limits and drops are counted.
+  4. Helper vdev must be destroyed (PEER_DELETE -> VDEV_STOP ->
+     VDEV_DELETE, 100 ms gaps) **before** the monitor vdev is torn down,
+     else FW asserts in dispatch_wlan_pdev_cmds.  Hooked into __hdd_stop
+     (monitor adapter) and hdd_stop_present_mode (con_mode switch).
+- Our tree differences vs Loukious': sessionId (not vdev_id) on the hdd
+  adapter, vdev_create_params uses if_id (not vdev_id), vdev_start_params
+  has chan_freq/chan_mode (not channel.mhz/phy_mode), wma_txrx_node has
+  addr/handle/is_vdev_valid (not objmgr .vdev pointer).  No
+  `injection_ctx` per-adapter state — a single global suffices (one
+  monitor vdev exists at a time).
+- ndo_start_xmit runs in BH context (rcu_read_lock_bh): the WMI round
+  trips + msleep are illegal there, so hdd_mon_tx only enqueues
+  (kmalloc GFP_ATOMIC) and a system_wq work item does the WMI work.
+- Buffer prep confirmed from send_mgmt_cmd_tlv: inline copy of the frame
+  head (min(frm_len, mgmt_tx_dl_frm_len)) + DMA paddr of the nbuf;
+  qdf_nbuf_alloc/qdf_nbuf_put_tail suffice (no cds_packet needed on the
+  WMI path; cds_packet is only LIM's wrapper).
+- Unverified on hardware yet: whether WCN3990 firmware sets
+  WMI_SERVICE_MGMT_TX_WMI (near-certain for this gen; wmi_desc pool is
+  only inited when the service bit is on — wmi_desc_get failing at
+  runtime would be the symptom), and whether FW accepts a second vdev
+  in global monitor mode.
