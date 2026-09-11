@@ -1062,3 +1062,17 @@ also existed before this patch.  Recovery: physical power cycle.
 Lessons baked into v2: never rely on WMA_LOGI for critical-path
 diagnostics on this driver (default trace mask hides it); always leave
 rate-limited WMA_LOGE breadcrumbs at every drop branch.
+
+## 2026-09-11 Why qcacld is completely silent in dmesg on this build
+
+`dmesg | grep -c "wlan:"` = 0 — not a single qcacld line ever.  Cause:
+qcacld Kbuild defines `-DWLAN_LOGGING_SOCK_SVC_ENABLE` (Kbuild:1327),
+so `qdf_vtrace_msg()` routes every WMA/HDD/SME log (including
+WMA_LOGE) to the userspace logging socket (cnss_diag on Android)
+instead of printk.  The per-module qdf trace masks (default
+FATAL|ERROR) are irrelevant — nothing reaches the kernel ring buffer.
+
+For any downstream kernel debugging here: use raw `pr_err` /
+`pr_err_ratelimited` in new code, or run a userspace logger on the
+qdf logging socket.  The injection patch's diagnostics are now raw
+printk (0009 v3).
