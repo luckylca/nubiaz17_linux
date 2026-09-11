@@ -52,10 +52,10 @@ index 207b6761..0d55e734 100644
  				      WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
  		/* fallthrough */
 diff --git a/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c b/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
-index 24a2b12b..02a589b4 100644
+index 24a2b12b..200f91f0 100644
 --- a/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
 +++ b/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
-@@ -852,6 +852,51 @@ static inline bool hdd_is_tx_allowed(struct sk_buff *skb, uint8_t peer_id)
+@@ -852,6 +852,62 @@ static inline bool hdd_is_tx_allowed(struct sk_buff *skb, uint8_t peer_id)
  	return false;
  }
  
@@ -93,6 +93,17 @@ index 24a2b12b..02a589b4 100644
 +
 +	frame = skb->data + rtap_len;
 +	frame_len = skb->len - rtap_len;
++
++	{
++		static bool mon_tx_logged;
++
++		if (!mon_tx_logged) {
++			hdd_err("mon tx: first frame, skb_len=%u rtap=%u frame_len=%u session=%u",
++				skb->len, rtap_len, frame_len,
++				adapter->sessionId);
++			mon_tx_logged = true;
++		}
++	}
 +
 +	/* minimum sane 802.11 frame: 24-byte mgmt header */
 +	if (frame_len >= 24)
@@ -140,7 +151,7 @@ index de42a3b3..a98e6e13 100644
  QDF_STATUS wma_resume_target(WMA_HANDLE handle);
  QDF_STATUS wma_disable_wow_in_fw(WMA_HANDLE handle);
 diff --git a/drivers/staging/qcacld-3.0/core/wma/src/wma_mgmt.c b/drivers/staging/qcacld-3.0/core/wma/src/wma_mgmt.c
-index 15635db0..43b5cad2 100644
+index 15635db0..fd2e804b 100644
 --- a/drivers/staging/qcacld-3.0/core/wma/src/wma_mgmt.c
 +++ b/drivers/staging/qcacld-3.0/core/wma/src/wma_mgmt.c
 @@ -24,6 +24,10 @@
@@ -154,7 +165,7 @@ index 15635db0..43b5cad2 100644
  #include "wma.h"
  #include "wma_api.h"
  #include "cds_api.h"
-@@ -4443,3 +4447,396 @@ void wma_deregister_packetdump_callback(void)
+@@ -4443,3 +4447,415 @@ void wma_deregister_packetdump_callback(void)
  	wma_handle->wma_mgmt_tx_packetdump_cb = NULL;
  	wma_handle->wma_mgmt_rx_packetdump_cb = NULL;
  }
@@ -236,7 +247,7 @@ index 15635db0..43b5cad2 100644
 +		wmi_unified_vdev_delete_send(wma_handle->wmi_handle,
 +					     g_mon_inj.vdev_id);
 +		msleep(100);
-+		WMA_LOGI("mon-inject: helper vdev %u destroyed",
++		WMA_LOGE("mon-inject: helper vdev %u destroyed",
 +			 g_mon_inj.vdev_id);
 +	}
 +	g_mon_inj.created = false;
@@ -339,7 +350,7 @@ index 15635db0..43b5cad2 100644
 +	g_mon_inj.chanfreq = chanfreq;
 +	qdf_mem_copy(g_mon_inj.mac, inj_mac, QDF_MAC_ADDR_SIZE);
 +
-+	WMA_LOGI("mon-inject: helper vdev %u (STA, mac %pM) on %u MHz for monitor vdev %u",
++	WMA_LOGE("mon-inject: helper vdev %u (STA, mac %pM) on %u MHz for monitor vdev %u",
 +		 vid, inj_mac, chanfreq, mon_vdev_id);
 +	return QDF_STATUS_SUCCESS;
 +
@@ -382,28 +393,46 @@ index 15635db0..43b5cad2 100644
 +	uint32_t chanfreq;
 +	QDF_STATUS status;
 +
-+	if (!wma_handle->wmi_ready || !wma_handle->wmi_handle)
++	if (!wma_handle->wmi_ready || !wma_handle->wmi_handle) {
++		wma_log_rate_limit_err(50, "mon-inject drop: wmi not ready");
 +		goto drop;
++	}
 +
 +	if (node->mon_vdev_id >= wma_handle->max_bssid ||
 +	    !wma_is_vdev_valid(node->mon_vdev_id) ||
 +	    wma_handle->interfaces[node->mon_vdev_id].type !=
-+						WMI_VDEV_TYPE_MONITOR)
++						WMI_VDEV_TYPE_MONITOR) {
++		wma_log_rate_limit_err(50,
++			"mon-inject drop: vdev %u invalid/not-monitor (valid=%d type=%u)",
++			node->mon_vdev_id,
++			node->mon_vdev_id < wma_handle->max_bssid ?
++				wma_is_vdev_valid(node->mon_vdev_id) : -1,
++			node->mon_vdev_id < wma_handle->max_bssid ?
++				wma_handle->interfaces[node->mon_vdev_id].type : 0);
 +		goto drop;
++	}
 +
 +	chanfreq = wma_handle->interfaces[node->mon_vdev_id].mhz;
-+	if (!chanfreq)
++	if (!chanfreq) {
++		wma_log_rate_limit_err(50,
++			"mon-inject drop: monitor vdev %u has zero channel",
++			node->mon_vdev_id);
 +		goto drop;
++	}
 +
 +	if (QDF_IS_STATUS_ERROR(wma_mon_inject_vdev_ensure(
 +					wma_handle, node->mon_vdev_id,
-+					chanfreq)))
++					chanfreq))) {
++		wma_log_rate_limit_err(50, "mon-inject drop: helper vdev ensure failed");
 +		goto drop;
++	}
 +
 +	nbuf = qdf_nbuf_alloc(cds_get_context(QDF_MODULE_ID_QDF_DEVICE),
 +			      node->len, 0, 0, false);
-+	if (!nbuf)
++	if (!nbuf) {
++		wma_log_rate_limit_err(50, "mon-inject drop: nbuf alloc failed");
 +		goto drop;
++	}
 +
 +	pdata = qdf_nbuf_put_tail(nbuf, node->len);
 +	if (!pdata) {
@@ -415,7 +444,7 @@ index 15635db0..43b5cad2 100644
 +	wmi_desc = wmi_desc_get(wma_handle);
 +	if (!wmi_desc) {
 +		qdf_nbuf_free(nbuf);
-+		WMA_LOGD("mon-inject: wmi desc pool exhausted");
++		wma_log_rate_limit_err(50, "mon-inject drop: wmi desc pool exhausted");
 +		goto drop;
 +	}
 +
@@ -445,7 +474,7 @@ index 15635db0..43b5cad2 100644
 +
 +	g_mon_inj.tx_ok++;
 +	if (g_mon_inj.tx_ok == 1)
-+		WMA_LOGI("mon-inject: first frame submitted, desc_id=%u vdev=%u len=%u chan=%u",
++		WMA_LOGE("mon-inject: first frame submitted, desc_id=%u vdev=%u len=%u chan=%u",
 +			 mgmt_param.desc_id, mgmt_param.vdev_id,
 +			 node->len, chanfreq);
 +	return;
@@ -453,7 +482,8 @@ index 15635db0..43b5cad2 100644
 +drop:
 +	g_mon_inj.tx_drop++;
 +	if (g_mon_inj.tx_drop == 1 || !(g_mon_inj.tx_drop % 100))
-+		WMA_LOGI("mon-inject: drop count %u", g_mon_inj.tx_drop);
++		WMA_LOGE("mon-inject: drop count %u (ok=%u fail=%u)",
++			 g_mon_inj.tx_drop, g_mon_inj.tx_ok, g_mon_inj.tx_fail);
 +}
 +
 +static void wma_mon_inject_work_fn(struct work_struct *work)
