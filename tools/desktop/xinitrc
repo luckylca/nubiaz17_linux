@@ -1,33 +1,29 @@
 #!/bin/sh
-# ~/.xinitrc — NX563J touch desktop session (Ubuntu MATE).
+# ~/.xinitrc — NX563J touch desktop session (LXQt).
 #
-# MATE = the official Ubuntu MATE flavor desktop: marco WM, mate-panel
-# (top bar with brisk menu + clock, bottom bar with window list), caja
-# file manager. CPU-rendered on fbdev (no GL) — marco needs no compositor.
-# Touch is the pointer (evdev touch0 in xorg.conf); onboard provides the
-# on-screen keyboard (autostart entry in /root/.config/autostart).
+# LXQt = modern Qt desktop, single bottom taskbar (menu left, tasks center,
+# tray+clock right). Pure CPU rendering on fbdev — no GL needed (openbox
+# WM). Touch is the pointer (evdev touch0 in xorg.conf); onboard is the
+# on-screen keyboard (XDG autostart in /root/.config/autostart).
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
-# Spawned from fbdash -> desktop.sh -> startx with no HOME in env — without
-# this, MATE components resolve HOME=/ and read //.config for everything.
+# Spawned from fbdash -> desktop.sh -> startx with no HOME in env.
 export HOME=/root
 export USER=root
-export XDG_CURRENT_DESKTOP=MATE
-export XDG_SESSION_DESKTOP=mate
+export XDG_CURRENT_DESKTOP=LXQt
+export XDG_SESSION_DESKTOP=lxqt
+# Qt honors Xft.dpi from the X resources for font sizing
+export QT_AUTO_SCREEN_SCALE_FACTOR=0
 
-# Root-window gradient as a fallback backdrop; caja draws its own
-# background on top once the session is up.
+# Root-window gradient fallback behind the desktop
 /root/setroot 2>/dev/null
 [ -f /root/.Xdefaults ] && xrdb -merge /root/.Xdefaults 2>/dev/null
 
-# Kiosk-style touch HMI: NEVER let X blank/DPMS the panel — fbdev answers
-# DPMS-off with FBIOBLANK, which clears mdss autorefresh and the screen
-# stays black until re-armed by hand.
+# Kiosk touch HMI: NEVER let X blank/DPMS the panel (fbdev FBIOBLANK
+# clears mdss autorefresh -> black screen until manually re-armed)
 xset s off 2>/dev/null
 xset s noblank 2>/dev/null
 xset -dpms 2>/dev/null
 
-# mate-session starts marco / mate-panel / caja / mate-settings-daemon and
-# honors ~/.config/autostart (onboard lives there). dbus-launch provides
-# the session bus in our systemd-free rootfs. Ending the session (System
-# menu -> Log Out, or X dying) drops back to the fbdash dashboard.
-exec dbus-launch --exit-with-session mate-session
+# Ending the session (main menu -> Leave -> Logout, or X dying) drops back
+# to the fbdash dashboard.
+exec dbus-launch --exit-with-session startlxqt

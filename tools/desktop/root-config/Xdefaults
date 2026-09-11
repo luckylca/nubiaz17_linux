@@ -1,5 +1,5 @@
-! NX563J: 1080x1920 on 5.5" ≈ 400 dpi. 2.25x (216) for finger-sized touch UI.
-Xft.dpi: 216
+! NX563J: 1080x1920 on 5.5" ≈ 400 dpi. 4.5x (432) — user wants chunky touch UI.
+Xft.dpi: 432
 Xft.antialias: 1
 Xft.hinting: 1
 Xft.rgba: rgb
