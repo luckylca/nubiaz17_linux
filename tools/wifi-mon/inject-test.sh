@@ -14,6 +14,13 @@ set -u
 CH=${1:-36}
 COUNT=${2:-10}
 
+# Persistent live dmesg: survives a device hang (written to the ubuntu
+# rootfs on userdata), so a post-mortem power-cycle still shows the
+# mon-inject lines and any cds_print_external_threads dump.
+dmesg -c > /root/inject-dmesg-pre.txt 2>/dev/null
+(dmesg -w >> /root/inject-dmesg-live.txt 2>/dev/null &)
+echo "live dmesg -> /root/inject-dmesg-live.txt"
+
 echo "== pre: kernel = $(uname -r)"
 uname -a | grep -q . || exit 1
 
@@ -41,4 +48,5 @@ dmesg | grep -i "mon-inject\|mon tx" || echo "(no mon-inject lines — driver si
 
 echo
 echo "== next: check the second sniffer for SSID NX563J-INJ-TEST"
-echo "== to restore:  ip link set wlan0 down; echo 0 > /sys/module/wlan/parameters/con_mode; sleep 4; sh /root/wifi-bringup4.sh"
+echo "== restore: REBOOT (runtime con_mode switch-back wedged the device once:"
+echo "==   /root/reboot-bl to fastboot, or echo b > /proc/sysrq-trigger)"
