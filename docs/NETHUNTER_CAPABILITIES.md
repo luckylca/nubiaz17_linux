@@ -7,7 +7,7 @@ WAITING_FOR_HARDWARE。
 | 能力 | 内核配置 | 驱动/机制 | 用户态 | 实测 | 结果 | 备注 |
 |------|----------|-----------|--------|------|------|------|
 | Wi-Fi 监听模式 (RX) | 内建 qcacld-3.0 v5.1.1.77V | con_mode=4 全局监听, wlan_mon_drv_ops | tools/wifi-mon/moncap.py (AF_PACKET) | 2026-09-10: 15s 318 帧, 317 合法 radiotap, beacon/probe/data/deauth, 2.4G/5G 信道可切 | **PASS** | con_mode sysfs 切换, 无需重启 |
-| Wi-Fi 帧注入 (TX) | 同上 + patches/downstream/0009 | hdd_mon_tx → WMA 队列 → 隐藏 STA 辅助 vdev → WMI_MGMT_TX_SEND | tools/wifi-mon/inject.py | 待 CI 构建 + 烧录 + 双机验证 | **BLOCKED(构建中)** | 机制移植自 Loukious (Kali 2026.1, sm8150 8f0698bf); 固件拒绝 MONITOR vdev 的 mgmt TX, 必须走辅助 vdev |
+| Wi-Fi 帧注入 (TX) | 同上 + patches/downstream/0009 v4 | hdd_mon_tx → WMA 队列 → 隐藏 STA 辅助 vdev → WMI_MGMT_TX_SEND | tools/wifi-mon/inject.py | 2026-09-12: 定位并修复监控口 TX 队列未启动(帧根本到不了驱动); v4 构建中 | **BLOCKED(修复后待测)** | 机制移植自 Loukious (Kali 2026.1, sm8150 8f0698bf); 固件拒绝 MONITOR vdev 的 mgmt TX, 必须走辅助 vdev; 监控 netdev 需显式 carrier+队列启动(见 RESEARCH.md 2026-09-12) |
 | monitor→mission 恢复 | 同上 | __con_mode_handler | — | 已知偶发 EAGAIN (cds_wait_for_external_threads_completion) | **BLOCKED(已知 bug)** | Phase 3 处理 |
 | USB HID 键盘/鼠标/复合 | 待加 config fragment | configfs gadget | tools/usb-hid/ | 未开始 | BLOCKED | Phase 4 |
 | 外置 USB Wi-Fi (ATH9K_HTC/RTL88XXAU/RTL8188EUS) | config/downstream-nethunter-wifi.fragment 待建 | — | — | 未开始 | WAITING_FOR_HARDWARE | Phase 5, 需要 OTG + 对应网卡 |
