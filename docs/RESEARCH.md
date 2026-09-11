@@ -1036,3 +1036,29 @@ boot target) must be built from a CI run with
 `config_fragment=config/downstream-usb-diag.fragment`
 (CONFIG_DEVTMPFS=y + gadget functions).  The bare-defconfig artifact is
 only safe for the pure diag image, and even then /dev is fragile.
+
+## 2026-09-11 Injection test round 1 (kernel 0009 v1) — silent TX path + mode-switch wedge
+
+Setup: CI run 34590481624 (cda6a278 + patches 0001-0009 + usb-diag
+fragment), boot image work/boot-ubuntu-inject2-signed.img (SHA256
+cc073fb1...638763b9f).  Boot itself fully verified: Ubuntu userspace,
+sshd, wlan0 STA back on 192.168.1.186 — daily driver intact.
+
+Test: inject-test.sh ch36 — con_mode 0->4 OK, wlan0 type monitor,
+`inject.py` reported sent 10/10 (55-byte radiotap+probe-req accepted by
+hdd_mon_tx).  But **zero mon-inject dmesg lines**: qdf gates WMA_LOGI
+per-module (g_qdf_trace_info bitmask, default hides INFO), so the
+milestones were invisible; whether the hidden STA helper vdev was even
+created is unknown from this round.  (Fix: milestones/drop-reasons
+promoted to WMA_LOGE in 0009 v2, plus one-shot hdd mon-tx proof line.)
+
+Then the **monitor->mission restore wedged the whole device**: first
+`echo 0 > con_mode` returned EAGAIN (known Phase-3 issue), a retry ~60 s
+later never connected — usb0 ping dead, Wi-Fi dead, no watchdog reset
+within 4 min.  Correlation with the injection state (queued frames /
+helper vdev vs. firmware) is plausible but unproven; the EAGAIN wedge
+also existed before this patch.  Recovery: physical power cycle.
+
+Lessons baked into v2: never rely on WMA_LOGI for critical-path
+diagnostics on this driver (default trace mask hides it); always leave
+rate-limited WMA_LOGE breadcrumbs at every drop branch.
