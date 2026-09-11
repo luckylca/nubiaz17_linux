@@ -162,7 +162,12 @@ kd() { # kd <name> [args...]
 }
 kd rmt_storage
 kd netmgrd
-kd cnd
+# cnd is NOT started (2026-09-11): it busy-loops at 100% CPU in a pure
+# userspace spin (93 voluntary ctx switches over 5+ min at full tilt) from
+# the moment it starts, in mission AND monitor mode — the main idle-heat
+# source (pm8998 47-48C at "idle"). Killing it leaves STA Wi-Fi fully
+# functional (wpa_supplicant talks nl80211 directly; cnd is Android's
+# connectivity-concurrency daemon and has no Ubuntu consumer).
 kd pd-mapper
 kd tftp_server
 # pm-service registers a HIDL service: vndservicemanager must exist first
@@ -235,7 +240,14 @@ for i in $(seq 1 60); do
 					[ -n "$ns" ] && echo "nameserver $ns" > /etc/resolv.conf && \
 						echo "resolv.conf rebuilt: $ns" >>/var/log/udhcpc-wlan0.log
 				}
-				( $NTP >>/var/log/ntp.log 2>&1 ) &
+				( $NTP >>/var/log/ntp.log 2>&1 && {
+					# 2026-09-11: keep the clock disciplined after the
+					# one-shot sync — without a daemon it drifts until
+					# the next boot. chrony's rtcsync also maintains
+					# the RTC (no working hwclock in this rootfs).
+					[ -x /usr/sbin/chronyd ] && ! pidof chronyd >/dev/null 2>&1 && \
+						chronyd >>/var/log/ntp.log 2>&1
+				} ) &
 				exit 0
 			}
 			sleep 2

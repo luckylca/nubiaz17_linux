@@ -21,6 +21,12 @@ mkdir -p /run/sshd /var/log /run/dbus
 ssh-keygen -A >/dev/null 2>&1
 /usr/sbin/sshd -E /var/log/sshd.log
 
+# System D-Bus + UPower (2026-09-11): without a system bus there is no
+# org.freedesktop.UPower, so the desktop battery plugin stays empty and
+# upowerd is never dbus-activated. Start both by hand (no systemd).
+dbus-daemon --system --fork 2>/dev/null
+[ -x /usr/libexec/upowerd ] && setsid /usr/libexec/upowerd >/dev/null 2>&1 &
+
 # Display: unblank the cmd-mode panel, then hand the framebuffer to the
 # long-lived holder. The fd MUST stay open or mdss re-suspends the
 # panel within a second. fbdash is a static binary (musl), runs here
