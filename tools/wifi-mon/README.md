@@ -39,6 +39,36 @@ echo 0 > /sys/module/wlan/parameters/con_mode
 # 然后重新执行 wifi-bringup4.sh 恢复 STA 连接。
 ```
 
+## 帧注入（patch 0009-qcacld-monitor-injection，移植自 Loukious / Kali 2026.1）
+
+机制：监听 netdev 增加 `ndo_start_xmit = hdd_mon_tx`（剥 radiotap → 原始
+802.11 帧 → WMA 队列 → 工作队列提交）。固件的 mgmt-TX 处理**拒绝 MONITOR
+vdev**（落到 beacon-only 路径直接丢弃），因此驱动先创建一个隐藏的
+**STA 类型辅助 vdev**（VDEV_CREATE→VDEV_START→PEER_CREATE 自 peer，故意不做
+VDEV_UP——STA vdev_up 在没有 BSS peer 时会 FW assert），再用
+`WMI_MGMT_TX_SEND_CMDID` 以辅助 vdev 名义把帧发出去。辅助 vdev 在监听
+vdev 拆除前销毁（`__hdd_stop` / `hdd_stop_present_mode`），顺序
+PEER_DELETE→VDEV_STOP→VDEV_DELETE，每步间隔 100ms，避免固件
+dispatch_wlan_pdev_cmds assert。
+
+注入测试（host 侧）：
+
+```sh
+# 已在监听模式、信道已设好（例如 channel 36）
+ip link set wlan0 up
+python3 /root/inject.py wlan0 10 100
+# 期望输出 sent 10/10；dmesg 出现：
+#   "mon-inject: helper vdev N (STA, mac ...) on 5180 MHz for monitor vdev M"
+#   "mon-inject: first frame submitted, desc_id=... "
+```
+
+**PASS 标准（未达标前不许标记完成）**：第二台独立监听设备在同一信道抓到
+SSID=`NX563J-INJ-TEST`、SA=`02:4e:58:35:36:33` 的 probe request。
+host 侧 sent 10/10 只说明驱动收下了帧，不证明空口发出。
+
+若 dmesg 出现 "mon-inject: WMI mgmt TX failed" 或 drop 计数持续上涨，
+说明本固件（WCN3990 ROM 固件）不走这条路径——查 `tx_fail/tx_drop` 计数。
+
 ## 已知坑
 
 - 写非法值（如 2）会被 is_con_mode_valid() 拒掉（-EINVAL），但
