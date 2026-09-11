@@ -1015,3 +1015,24 @@ verified by an independent sniffer.  Research on work/lineage-kernel
   only inited when the service bit is on — wmi_desc_get failing at
   runtime would be the symptom), and whether FW accepts a second vdev
   in global monitor mode.
+
+## 2026-09-11 Production Ubuntu boot image REQUIRES the usb-diag config fragment
+
+Symptom after flashing a CI kernel built WITHOUT a config fragment
+(run 34578807184, lineageos_nx563j_defconfig only): device boots, usb0
+pings, telnetd on :23 answers, but no sshd/fbdash — the initramfs mark
+log (sde20 sectors 0-8) shows "boot target: ubuntu" then "rootfs rc.boot
+done" immediately, i.e. rc.boot.ubuntu ran but its services died.
+
+Root cause: the plain defconfig has **CONFIG_DEVTMPFS unset**, so the
+initramfs falls back to tmpfs-/dev + mdev, and /dev/null ended up as a
+**regular file** (140 KB of swallowed writes) instead of a char node.
+sshd then dies at startup: `daemon() failed: No such device`
+(/var/log/sshd.log on the ubuntu rootfs).  telnetd survives because it
+only needs /dev/ptmx (which was a proper node).
+
+Rule: any boot image carrying the production initramfs (Ubuntu/Alpine
+boot target) must be built from a CI run with
+`config_fragment=config/downstream-usb-diag.fragment`
+(CONFIG_DEVTMPFS=y + gadget functions).  The bare-defconfig artifact is
+only safe for the pure diag image, and even then /dev is fragile.
