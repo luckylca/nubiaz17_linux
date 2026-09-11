@@ -11,10 +11,56 @@ index 98dcffe8..3e262adb 100644
  
  QDF_STATUS hdd_init_tx_rx(hdd_adapter_t *pAdapter);
 diff --git a/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
-index 207b6761..0d55e734 100644
+index 207b6761..5287b8cd 100644
 --- a/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
 +++ b/drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
-@@ -2762,8 +2762,11 @@ static int __hdd_stop(struct net_device *dev)
+@@ -2005,6 +2005,18 @@ static int __hdd_mon_open(struct net_device *dev)
+ 		return -EINVAL;
+ 	}
+ 
++	/* 2026-09-12 (ported from Loukious/Kali monitor-injection): duplicate
++	 * ifup while monitor mode is active is idempotent — only re-assert
++	 * carrier/queues, never re-create the monitor session.
++	 */
++	if (test_bit(DEVICE_IFACE_OPENED, &adapter->event_flags)) {
++		wlan_hdd_netif_queue_control(adapter,
++					     WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
++					     WLAN_CONTROL_PATH);
++		pr_err("mon-open: duplicate ifup, carrier/queues re-asserted\n");
++		return 0;
++	}
++
+ 	hdd_mon_mode_ether_setup(dev);
+ 
+ 	if (cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE)
+@@ -2012,8 +2024,25 @@ static int __hdd_mon_open(struct net_device *dev)
+ 	else
+ 		ret = hdd_set_mon_mode_cb(dev);
+ 
++	if (ret)
++		return ret;
++
+ 	set_bit(DEVICE_IFACE_OPENED, &adapter->event_flags);
+-	return ret;
++
++	/* The monitor netdev never gets carrier/TX queues started anywhere
++	 * else: the interface comes up NO-CARRIER with all TX queues
++	 * XOFF-stopped, so dev_queue_xmit() never reaches ndo_start_xmit and
++	 * injected frames are swallowed silently (diagnosed 2026-09-12:
++	 * send() returns len, qdisc/softnet/nit counters all flat, one-shot
++	 * hdd_mon_tx printk never fires). Bring carrier and queues up here
++	 * exactly like the station open path does.
++	 */
++	wlan_hdd_netif_queue_control(adapter,
++				     WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
++				     WLAN_CONTROL_PATH);
++	pr_err("mon-open: monitor if=%s carrier/tx queues started\n",
++	       dev->name);
++	return 0;
+ }
+ 
+ /**
+@@ -2762,8 +2791,11 @@ static int __hdd_stop(struct net_device *dev)
  		hdd_lpass_notify_stop(hdd_ctx);
  	}
  
@@ -27,7 +73,7 @@ index 207b6761..0d55e734 100644
  
  	/*
  	 * NAN data interface is different in some sense. The traffic on NDI is
-@@ -3266,10 +3269,13 @@ static const struct net_device_ops wlan_drv_ops = {
+@@ -3266,10 +3298,13 @@ static const struct net_device_ops wlan_drv_ops = {
  #endif
  };
  
@@ -42,7 +88,7 @@ index 207b6761..0d55e734 100644
  	.ndo_get_stats = hdd_get_stats,
  };
  
-@@ -13050,6 +13056,8 @@ static void hdd_stop_present_mode(hdd_context_t *hdd_ctx,
+@@ -13050,6 +13085,8 @@ static void hdd_stop_present_mode(hdd_context_t *hdd_ctx,
  	switch (curr_mode) {
  	case QDF_GLOBAL_MONITOR_MODE:
  		hdd_info("Release wakelock for monitor mode!");
