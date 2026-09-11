@@ -30,13 +30,17 @@ python3 /root/moncap.py wlan0 15 # 抓包验证（radiotap + 帧类型直方图�
 
 ## 切回正常模式
 
+**⚠️ 2026-09-11 更新：monitor→mission 运行时切换当前不可靠（Phase 3 目标）。**
+一次注入测试后 `echo 0` 先 EAGAIN、约 60 秒内整机挂死（usb0 ping 都死，
+无看门狗复位）。在 Phase 3 修复前，**监听/注入测试做完直接重启恢复**
+（`/root/reboot-bl` 进 fastboot 或 `echo b > /proc/sysrq-trigger`），
+不要运行时切回。
+
 ```sh
 ip link set wlan0 down
 echo 0 > /sys/module/wlan/parameters/con_mode
 # 若返回 "Resource temporarily unavailable"（EAGAIN）：有外部线程还在驱动里
-# （cds_wait_for_external_threads_completion 失败）。等几秒、确认没有进程
-# 在碰 wlan（wpa_supplicant / 抓包 socket / iwpriv），再重试。
-# 然后重新执行 wifi-bringup4.sh 恢复 STA 连接。
+# （cds_wait_for_external_threads_completion 失败）。不要再重试，直接重启。
 ```
 
 ## 帧注入（patch 0009-qcacld-monitor-injection，移植自 Loukious / Kali 2026.1）
