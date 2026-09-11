@@ -1076,3 +1076,38 @@ For any downstream kernel debugging here: use raw `pr_err` /
 `pr_err_ratelimited` in new code, or run a userspace logger on the
 qdf logging socket.  The injection patch's diagnostics are now raw
 printk (0009 v3).
+
+## 2026-09-12 — 注入静默根因：监控 netdev 的 carrier/TX 队列从未启动（已修，待验证）
+
+**现象**（连续三轮一致）：注入脚本 `send()` 全部返回成功（10/10、1000/1000），
+但驱动侧零日志（含 raw pr_err 一次性日志也从未触发）。
+
+**排除法证据链**（全部在同一台设备、monitor 模式下实测）：
+- `/proc/kallsyms` 确认 `hdd_mon_tx`/`wma_mon_inject_frame` 符号在运行内核中
+  （代码在，但从未被调用）；
+- `tc -s qdisc show dev wlan0` 全部 5 个 band：Sent 0、backlog 0、
+  **requeues 0**、dropped 0（1000 帧突发前后）；
+- `/proc/net/softnet_stat` processed 计数在 1000 帧注入下基本不动；
+- ptype_all tap（PACKET_OUTGOING）抓不到任何出站帧 → 帧死在
+  `dev_queue_xmit_nit` 之前；
+- 同机同脚本对 usb0 发包 qdisc 计数正常 +1 → AF_PACKET TX 路径本身没问题。
+
+**根因**：`__hdd_mon_open()`（本树旧版）只做 `hdd_mon_mode_ether_setup` +
+`hdd_set_mon_rx_cb`，**从不 `netif_carrier_on` 也不 start TX 队列**（STA 的
+`__hdd_open` 路径才会做）。监控接口因此 NO-CARRIER + 全队列 XOFF，
+`send()` 成功返回但帧根本到不了 `ndo_start_xmit`。
+Loukious 参考补丁（Kali 2026.1, sm8150 8f0698bf）在 `__hdd_mon_open` 里调
+`wlan_hdd_netif_queue_control(WLAN_START_ALL_NETIF_QUEUE_N_CARRIER)` 正是为此，
+我们的最小移植漏了这块。
+
+**修复**（patch 0009 v4）：监控 open 成功后调
+`wlan_hdd_netif_queue_control(adapter, WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
+WLAN_CONTROL_PATH)`；重复 ifup 幂等（只重 assert，不重建会话）；
+pr_err 里程碑日志。
+
+**教训**：最小移植时要对参考补丁做「逐 hunk 必要性审计」，尤其 netdev
+生命周期（open/close/queue/carrier）这类与注入机制正交但致命的配套修改。
+
+**稳定性注记**：同日在旧 v3 内核的 monitor 模式下长测（含 down/up bounce）
+后设备再次整机黑屏（usb0 消失、无 fastboot、无看门狗复位），需物理开机。
+monitor 模式的运行时不稳定性仍是 Phase 3（任务 #13）的核心议题。
