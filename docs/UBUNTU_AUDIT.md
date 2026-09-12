@@ -99,3 +99,35 @@
   存在即触发 PON。要"插线真关"只能在内核 do_msm_poweroff 里加 SPMI
   写，屏蔽 CHGR PON 触发——代价是插线也不再自动开机（需按电源键）。
   属于内核补丁级改动，暂记 WAITING（收益/风险不成比例，拔线关机已可用）。
+
+## 2026-09-12 插线关机收官（HALT 方案）+ 亮度滑块
+
+### 插线关机 = 冻结不重启（实机 PASS）
+- 结论回顾：abl EFI 分区无 charger/offmode 字串，本机不存在 offmode-charging
+  模式；PMIC PON 的 charger trigger 会在 VBUS 存在时把 POWER_OFF 变成重新
+  上电——这就是"菜单关机变重启"的机理（见上文 task #24 节）。
+- 方案：插线时不发 PON 断电指令，改走 LINUX_REBOOT_CMD_HALT（0xcdef0123）。
+  内核停机但 PMIC 未收到关机命令，charger trigger 无从触发，效果等同关机。
+- 实现：
+  - tools/powerctl/powerctl.s 增加 `halt` 模式；参数匹配改为**全串精确匹配**
+    （原先按首字母分派，`powerctl bogus` 的首字母 b 会命中 bootloader 进
+    fastboot——已实测踩过一次）。构建 435 B，sha256 4ad22677…，
+    部署 /usr/sbin/powerctl。
+  - tools/desktop/fake-logind.py：PowerOff() 先查
+    /sys/class/power_supply/{usb,ac,mains}/online——在线则 blank fb0
+    （FB_BLANK_POWERDOWN）后 `powerctl halt`，拔线则照旧 `powerctl poweroff`。
+- 验证（2026-09-12 21:37，USB 插 Mac）：dbus PowerOff 触发后 5 s 内 ssh 断，
+  之后连续 4 分钟 + 额外探测全程 DOWN（39×DOWN，无一次回上线）；旧路径同
+  条件 60–90 s 内必回。判 **PASS**。恢复方式：长按电源键 ~10 s。
+- 注意：halt 后设备对外完全死掉（USB gadget 也断），属预期。
+
+### 面板亮度滑块（截图 + 用户实触 PASS）
+- 背光双节点需同步写：/sys/class/leds/lcd-backlight（max 255）与
+  /sys/class/leds/wled（max 4095），按百分比线性映射。
+- tools/desktop/brightness-slider.py：GTK3 滑块窗口（5–100%，80 ms 节流），
+  --set N / --restore CLI；设定值持久化 /root/.brightness，xinitrc 启动时
+  --restore 恢复（开机默认值在 initramfs 里，rootfs 层只能管到 X 会话起）。
+- 面板 quicklaunch 第 4 图标（mate-brightness-applet 太阳图标；hicolor 里
+  没有 display-brightness-symbolic，首版 fallback 成丑占位图，已换）。
+- 验证：--set 30 → lcd 76/wled 1228；--set 80 → lcd 204/wled 3276，比例正确；
+  抓屏确认窗口与图标渲染；用户随后实际拖动到 50% 并移动窗口，触摸链路可用。

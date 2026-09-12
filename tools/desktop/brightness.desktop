@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Brightness
+Comment=Adjust the panel backlight
+Exec=/root/brightness-slider.py
+Icon=mate-brightness-applet
+Categories=Settings;

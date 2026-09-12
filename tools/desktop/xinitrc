@@ -18,6 +18,10 @@ export QT_AUTO_SCREEN_SCALE_FACTOR=0
 /root/setroot 2>/dev/null
 [ -f /root/.Xdefaults ] && xrdb -merge /root/.Xdefaults 2>/dev/null
 
+# Re-apply the user's backlight level (the boot default is baked into the
+# initramfs; the persisted value from the brightness slider lives here)
+/root/brightness-slider.py --restore 2>/dev/null
+
 # Single-user appliance: let any local process (ssh shells, screenshot
 # pipeline, fake-logind tests) talk to X without cookie juggling. The X
 # server has -nolisten tcp, so this is local-only.
