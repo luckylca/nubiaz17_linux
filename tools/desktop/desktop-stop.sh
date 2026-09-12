@@ -5,5 +5,7 @@
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 pkill -f mate-session 2>/dev/null
 pkill -f lxsession 2>/dev/null
+# current desktop is LXQt: "lxqt-session" matches neither pattern above
+pkill -f lxqt-session 2>/dev/null
 # if the session is wedged, falling back to killing Xorg still works:
 # desktop.sh's startx returns and fbdash comes up either way

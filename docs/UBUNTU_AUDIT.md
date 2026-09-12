@@ -25,3 +25,29 @@
 ## 负载注记
 
 `load average ~3.5` 但 CPU 很闲：3 个 D 态内核线程（`mdss_dsi_event`、`mdss_fb0`、`kworker/u16:1`）拉高计数，累计 CPU 时间 0:00，不是功耗问题。
+
+## 2026-09-12 关机链路收官 + UI 缩放再平衡
+
+### 应用关机（LXQt Leave 菜单）— 已修
+- 根因 1：lxqt.conf 的 poweroff_command 等键在 LXQt 1.4 是**死配置**，
+  liblxqt 里只有 lock_command；leave 只走 logind/ConsoleKit 系统总线。
+- 根因 2：powerctl 关机本身正常，但**插着 USB 时 PMIC 把 VBUS 当开机
+  触发**，关机后立刻自动重启——用户视角就是"关机没用"。拔线关机实测
+  真关（2026-09-12 用户在场验证）。
+- 修复：tools/desktop/fake-logind.py（python3-dbus，系统总线上实现
+  org.freedesktop.login1.Manager 的 Can*/PowerOff/Reboot → powerctl），
+  策略文件 org.freedesktop.login1.conf → /etc/dbus-1/system.d/，
+  rc.boot.ubuntu 自启动。lxqt-leave --shutdown 实测触发断电。
+- 注意：插着 USB 点关机 = 关机后自动重启（PMIC 行为，非 bug）；
+  想真关请拔线后关机。
+
+### UI 缩放：4.5x → 2.25x
+- 用户反馈"文字太大、图标太小"：Xft.dpi 432 把文字放大 4.5 倍，图标
+  固定 96px 不随 dpi——比例崩坏。
+- 改为 Xft.dpi 216（文字减半），iconSize 96 不变，panelSize 160→128，
+  taskbar buttonWidth 300→240。
+- 顺带修复：desktop-stop.sh 的 pkill 模式还是 LXDE/MATE 时代的
+  （mate-session/lxsession），根本杀不掉 lxqt-session——之前的"重启
+  桌面不生效"全是它。已加 lxqt-session。
+- 顺带清理：/tmp/.X*-lock 积攒 43 个（startx 因此一路选到 :42），
+  重启前清理后回到 :0。注释里不能有双引号（xrdb 过 cpp）。

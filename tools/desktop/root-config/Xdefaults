@@ -1,5 +1,7 @@
-! NX563J: 1080x1920 on 5.5" ≈ 400 dpi. 4.5x (432) — user wants chunky touch UI.
-Xft.dpi: 432
+! NX563J: 1080x1920 on 5.5in ~400 dpi. 2.25x (216) — 2026-09-12: 4.5x made
+! text huge vs tiny icons; halve text, keep 96px touch-target icons.
+! NOTE: no double-quote chars in comments (file goes through cpp).
+Xft.dpi: 216
 Xft.antialias: 1
 Xft.hinting: 1
 Xft.rgba: rgb
