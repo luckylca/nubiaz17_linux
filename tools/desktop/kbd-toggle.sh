@@ -14,12 +14,23 @@
 export DISPLAY=:0
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
+# Serialize invocations: without this, a quick double-tap on the panel icon
+# passes the pidof check in both instances before either has exec'd
+# matchbox-keyboard -> two keyboard windows (2026-09-12 user report).
+exec 9>/tmp/kbd-toggle.lock
+flock -x 9 2>/dev/null || {
+  # flock(1) missing: fall through unguarded (better than breaking the key)
+  :
+}
+
 if pidof matchbox-keyboard >/dev/null 2>&1; then
   pkill -f "matchbox-k[e]yboard"
   exit 0
 fi
 
-setsid matchbox-keyboard >/dev/null 2>&1 &
+# 9>&- is essential: matchbox-keyboard must NOT inherit the lock fd, or it
+# holds the flock for its whole lifetime and every later toggle blocks.
+setsid matchbox-keyboard >/dev/null 2>&1 9>&- &
 i=0
 while [ $i -lt 20 ]; do
   wmctrl -l 2>/dev/null | grep -q " Keyboard$" && break

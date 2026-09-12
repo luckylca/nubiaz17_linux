@@ -65,6 +65,18 @@ def main():
                 pass
         return
 
+    import fcntl
+    import subprocess
+
+    # Single instance: a second launch (e.g. tapping the panel icon again)
+    # raises the existing window instead of opening a duplicate.
+    lockfd = os.open("/tmp/brightness-slider.lock", os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        subprocess.call(["wmctrl", "-a", "Brightness"])
+        return
+
     import gi
     gi.require_version("Gtk", "3.0")
     from gi.repository import Gtk, GLib

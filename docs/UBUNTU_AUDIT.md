@@ -131,3 +131,11 @@
   没有 display-brightness-symbolic，首版 fallback 成丑占位图，已换）。
 - 验证：--set 30 → lcd 76/wled 1228；--set 80 → lcd 204/wled 3276，比例正确；
   抓屏确认窗口与图标渲染；用户随后实际拖动到 50% 并移动窗口，触摸链路可用。
+
+### 重复窗口修复（亮度/键盘单实例）
+- 现象：点面板图标两次会开出两个亮度窗口、两个屏幕键盘。
+- 亮度：brightness-slider.py 启动时 flock /tmp/brightness-slider.lock，
+  抢不到锁则 wmctrl -a 唤起已有窗口后退出（二次点击=聚焦，不再新开）。
+- 键盘：kbd-toggle.sh 全程 flock 串行化（双击竞态下两个进程都通过
+  pidof 检查 → 各起一个键盘）。注意 matchbox-keyboard 启动必须 9>&-
+  关掉锁 fd，否则它终身持锁，之后的切换全部死等（实测挂死一次）。
