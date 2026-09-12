@@ -243,8 +243,11 @@ for i in $(seq 1 60); do
 				( $NTP >>/var/log/ntp.log 2>&1 && {
 					# 2026-09-11: keep the clock disciplined after the
 					# one-shot sync — without a daemon it drifts until
-					# the next boot. chrony's rtcsync also maintains
+					# the next boot. chrony (rtcsync) also maintains
 					# the RTC (no working hwclock in this rootfs).
+					# NOTE: no apostrophes allowed in comments here —
+					# this whole block lives inside a single-quoted
+					# string; one quote ends it and kills the script.
 					[ -x /usr/sbin/chronyd ] && ! pidof chronyd >/dev/null 2>&1 && \
 						chronyd >>/var/log/ntp.log 2>&1
 				} ) &
