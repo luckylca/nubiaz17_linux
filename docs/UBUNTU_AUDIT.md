@@ -91,3 +91,11 @@
   正常。用户连接蓝牙路径：托盘蓝牙图标 / Bluetooth Devices → Search。
 - 注意：downstream-usb-diag-bt 才是生产片段；无 BT 的
   downstream-usb-diag.fragment 以后只用于纯 diag 调试镜像。
+
+### 插电关机变重启（task #24）调查结论
+- abl 分区（4MB EFI 引导器）strings 无 charger/offmode/poweroff 字样：
+  本机没有 LK 式 offmode charging 模式，RESTART2 "charger" 无目标可跳。
+- 自动重启的机理：PMIC PON 的 charger-trigger 在关机后仍武装，VBUS
+  存在即触发 PON。要"插线真关"只能在内核 do_msm_poweroff 里加 SPMI
+  写，屏蔽 CHGR PON 触发——代价是插线也不再自动开机（需按电源键）。
+  属于内核补丁级改动，暂记 WAITING（收益/风险不成比例，拔线关机已可用）。
