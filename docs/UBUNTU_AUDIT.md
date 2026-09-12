@@ -81,3 +81,13 @@
   全部 TIOCSETD N_HCI EINVAL）。repo 里其实早有
   downstream-usb-diag-bt.fragment（含 HCIUART/H4/QCA），但生产镜像
   一直用无 BT 片段。v7 已用 BT 片段触发 CI（run 34694688501）。
+
+### v7 内核（usb-diag-bt 片段）：蓝牙回来了 — 2026-09-12
+- CI 34694688501（downstream-usb-diag-bt.fragment），boot 分区截断哈希
+  679822e7…，/proc/tty/ldiscs 出现 n_hci，注入符号 13 个完好。
+- 本次启动 supervisor attach 第一次就成功（之前的 EINVAL 纯粹是缺
+  ldisc）。hci0 UP RUNNING（BD 00:A0:C6:DF:55:E4）。
+- blueman-manager 实测：搜索进度条 + HCI 流量计数都在动，托盘图标
+  正常。用户连接蓝牙路径：托盘蓝牙图标 / Bluetooth Devices → Search。
+- 注意：downstream-usb-diag-bt 才是生产片段；无 BT 的
+  downstream-usb-diag.fragment 以后只用于纯 diag 调试镜像。
