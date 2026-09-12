@@ -5,3 +5,4 @@ backups/
 *.img
 *.bin
 *.log
+__pycache__/
