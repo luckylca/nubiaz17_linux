@@ -1146,3 +1146,38 @@ mon-inject: first frame submitted, desc_id=0 vdev=4 len=47 chan=5745
 - pkill 自匹配陷阱再次咬人：远程命令行里含模式串时 `pkill -f` 会杀掉
   执行它的 shell 本身。统一用 `pkill -f "inj-l[o]op"` 括号写法。
 - setsid 启动的脚本必须 chmod +x，否则静默失败。
+
+## 2026-09-12 Phase 3 收官：monitor→mission 运行时切换实测 PASS（v6 内核）
+
+**背景**：Phase 3 竞态修复（patch 0009 v6：`g_mon_inj.stopping` 标志 +
+`wma_mon_inject_rearm()`，防止 cleanup 期间 inject_frame 重 arm work 重建
+辅助 vdev → 孤儿 vdev FW assert）刷入后做首次真机切换测试。
+
+**构件**：work/boot-ubuntu-inject6.img，分区截断哈希 1787d232…（CI run
+34663038475，kernel Image.gz-dtb 1f278586…）。注意：CI 内核 uname 构建日期
+固定显示 Aug 23（ reproducible build 时间戳），不能用来判断刷入版本——
+以分区哈希 + /proc/kallsyms 符号为准。
+
+**测试过程**（usb0 ssh + USB 串口 ttyGS 双通道观察兜底）：
+1. 任务模式日常回归：luckyy_5G 关联、chronyd ok、无 cnd、日期正确。
+2. inject-test.sh 149 10：mon tx/helper vdev 5745MHz/submitted 日志与 v5
+   完全一致——Phase 3 改动未破坏注入路径。
+3. `echo 0 > con_mode`（注入后 60s，cleanup 与残留 work 最危险的窗口）：
+   `mon-inject: helper vdev 4 destroyed`，无 assert 无 wedge，wlan0/wlan1/
+   p2p0 全部重建。
+4. wpa_supplicant + dhclient 重关联 luckyy_5G，HTTP 204 出网。
+5. 第二循环 `echo 4` → 再注入 5/5（**rearm 路径首次被真实触发**：
+   helper vdev 重建，stopping 标志正确复位）→ 再 `echo 0` → 再重关联，
+   HTTP 204。两个完整循环零异常。
+
+**结论**：操作规则从"monitor 后必须重启"放宽为"运行时切换 + 重启
+wpa_supplicant/dhclient"。inject-test.sh 尾部提示已同步更新。
+
+**附带发现（本次会话）**：
+- 设备 boot 分区曾是一个不匹配仓库任何本地镜像的旧镜像（ssh host key 也
+  变了）。排查发现 Mac 的 ~/.ssh/id_ed25519 被重新生成过，设备
+  authorized_keys 里还是旧公钥 → ssh 全部 Permission denied。**恢复路径：
+  USB 串口控制台 /dev/cu.usbmodem11405（initramfs ttyGS root shell）直接
+  改 rootfs 文件**。串口是除 ssh 外的第二管理通道，务必保留。
+- 镜像哈希校验惯例：dd bs=512 count=floor(size/512)，不能用 ceil（分区
+  尾部有上次刷入的残留字节，多读 1 块必然 mismatch）。

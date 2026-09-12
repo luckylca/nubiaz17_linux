@@ -8,7 +8,7 @@ WAITING_FOR_HARDWARE。
 |------|----------|-----------|--------|------|------|------|
 | Wi-Fi 监听模式 (RX) | 内建 qcacld-3.0 v5.1.1.77V | con_mode=4 全局监听, wlan_mon_drv_ops | tools/wifi-mon/moncap.py (AF_PACKET) | 2026-09-10: 15s 318 帧, 317 合法 radiotap, beacon/probe/data/deauth, 2.4G/5G 信道可切 | **PASS** | con_mode sysfs 切换, 无需重启 |
 | Wi-Fi 帧注入 (TX) | 同上 + patches/downstream/0009 v4 | hdd_mon_tx → WMA 队列 → 隐藏 STA 辅助 vdev → WMI_MGMT_TX_SEND | tools/wifi-mon/inject.py | 2026-09-12: host 侧链路全通(日志见下), **射频证据缺第二嗅探器** | **BLOCKED(待双机验证)** | 机制移植自 Loukious (Kali 2026.1, sm8150 8f0698bf); 固件拒绝 MONITOR vdev 的 mgmt TX, 必须走辅助 vdev; 监控 netdev 需显式 carrier+队列启动(RESEARCH.md 2026-09-12) |
-| monitor→mission 恢复 | 同上 | __con_mode_handler | — | 已知偶发 EAGAIN (cds_wait_for_external_threads_completion) | **BLOCKED(已知 bug)** | Phase 3 处理 |
+| monitor→mission 恢复 | 同上 + patches/downstream/0009 v6 (teardown 竞态修复) | __con_mode_handler + wma_mon_inject_cleanup/rearm (stopping 标志) | — | 2026-09-12: 两个完整 mission→monitor→注入→mission 循环, helper vdev 干净销毁/重建, STA 重关联 + DHCP + HTTP 204, dmesg 零 assert | **PASS** | boot-ubuntu-inject6.img (1787d232…, CI 34663038475); 根因: cleanup 期间 inject_frame 重 arm work → 孤儿 vdev FW assert; 修复见 RESEARCH.md 2026-09-12 |
 | USB HID 键盘/鼠标/复合 | 待加 config fragment | configfs gadget | tools/usb-hid/ | 未开始 | BLOCKED | Phase 4 |
 | 外置 USB Wi-Fi (ATH9K_HTC/RTL88XXAU/RTL8188EUS) | config/downstream-nethunter-wifi.fragment 待建 | — | — | 未开始 | WAITING_FOR_HARDWARE | Phase 5, 需要 OTG + 对应网卡 |
 | USB Host/OTG 稳定性 | — | — | — | 未开始 | BLOCKED | Phase 6 |

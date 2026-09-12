@@ -56,5 +56,6 @@ dmesg | grep -i "mon-inject\|mon tx" || echo "(no mon-inject lines — driver si
 
 echo
 echo "== next: check the second sniffer for SSID NX563J-INJ-TEST"
-echo "== restore: REBOOT (runtime con_mode switch-back wedged the device once:"
-echo "==   /root/reboot-bl to fastboot, or echo b > /proc/sysrq-trigger)"
+echo "== restore: echo 0 > /sys/module/wlan/parameters/con_mode (runtime"
+echo "==   switch-back verified stable on v6, 2026-09-12), then restart"
+echo "==   wpa_supplicant + dhclient; reboot only if that wedges"
