@@ -73,7 +73,12 @@ done
   done
 ) &
 
-startx >/var/log/X.log 2>&1
+# Pin the display to :0 (stale /tmp/.X*-lock files from crashed sessions
+# otherwise push startx to :1, :42, ... and every DISPLAY=:0 consumer —
+# screenshot pipeline, ssh-driven X tools — loses the server). Cleaning
+# locks here is safe: we only get this far when no Xorg is running.
+rm -f /tmp/.X*-lock /tmp/.X11-unix/X* /tmp/serverauth.* 2>/dev/null
+startx -- :0 >/var/log/X.log 2>&1
 
 # session over: release the touch grab and bring the dashboard back
 kill $TF_PID 2>/dev/null

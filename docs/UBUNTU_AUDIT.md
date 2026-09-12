@@ -51,3 +51,33 @@
   桌面不生效"全是它。已加 lxqt-session。
 - 顺带清理：/tmp/.X*-lock 积攒 43 个（startx 因此一路选到 :42），
   重启前清理后回到 :0。注释里不能有双引号（xrdb 过 cpp）。
+
+## 2026-09-12 桌面 UX 大修（第二轮反馈）
+
+### 抓屏自验管线（我的眼睛）
+- xwd -root | xwdtopnm | pnmtopng → scp 回 Mac。之后所有桌面改动
+  都以抓屏为验收标准。前提：X 固定在 :0（desktop.sh 已清锁并
+  startx -- :0）+ xinitrc 里 xhost +local:（本机免 cookie）。
+
+### 屏幕键盘：onboard 弃用，matchbox-keyboard 上岗
+- onboard 1.4.1 在我们的触摸栈上必崩：osk.so 监听 XI2 raw 事件，
+  uinput 触摸克隆的事件一来就 SIGSEGV（gdb 实锤 PyObject_Malloc in
+  osk.so ← gdk event）。用户点一下键盘就消失 = 段错误。已 purge。
+- matchbox-keyboard 只发 XTest 不听 XI2，稳。自身定位 bug：以为屏是
+  1080 竖屏，窗口落在 (1,910) 底部 260px 在屏外——这就是"下半部分
+  被挡住"。修复：kbd-toggle.sh 启动后 wmctrl 钉到 (420,520)。
+- 实测打字：qterminal 里 xdotool 点击键盘 h/i/space/q/d 全部上屏。
+- 面板快速启动第三个图标已换成键盘开关（kbd-toggle.desktop）。
+
+### Wi-Fi GUI：wpa_gui（wpagui 包）
+- wpa_supplicant.conf 本就带 ctrl_interface=/run/wpa_supplicant +
+  update_config=1，wpa_gui 直接可用：Scan 选网 → 输密码（用屏幕
+  键盘）→ 保存。已抓屏验证状态页（Completed/192.168.1.186）。
+
+### 蓝牙 GUI：blueman
+- blueman-manager 报错 "BlueZ daemon is not running" → 追出大坑：
+  当前 v6 注入内核的 CI 片段 downstream-usb-diag.fragment 没带
+  CONFIG_BT_HCIUART（/proc/tty/ldiscs 只有 n_tty/ppp，hciattach
+  全部 TIOCSETD N_HCI EINVAL）。repo 里其实早有
+  downstream-usb-diag-bt.fragment（含 HCIUART/H4/QCA），但生产镜像
+  一直用无 BT 片段。v7 已用 BT 片段触发 CI（run 34694688501）。

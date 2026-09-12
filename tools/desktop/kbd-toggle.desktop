@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Keyboard
+Comment=Toggle the on-screen keyboard
+Exec=/root/kbd-toggle.sh
+Icon=input-keyboard
+Categories=Utility;
