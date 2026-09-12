@@ -1111,3 +1111,38 @@ pr_err 里程碑日志。
 **稳定性注记**：同日在旧 v3 内核的 monitor 模式下长测（含 down/up bounce）
 后设备再次整机黑屏（usb0 消失、无 fastboot、无看门狗复位），需物理开机。
 monitor 模式的运行时不稳定性仍是 Phase 3（任务 #13）的核心议题。
+
+## 2026-09-12 — 注入 host 侧链路全通（v4/v5 内核实测），射频证明待双机
+
+内核：patch 0009 v4（mon-open 队列修复）, boot 镜像 work/boot-ubuntu-inject5.img
+(SHA256 fe9188d9…), CI run 34624411511, Image.gz-dtb 12cca134…
+
+实测序列（usb0 ssh, 设备 monitor 模式, carrier=1, operstate=up）：
+
+```
+mon-open: monitor if=wlan0 carrier/tx queues started
+mon tx: first frame, skb_len=55 rtap=8 frame_len=47 session=0
+mon-inject: helper vdev 4 (STA, mac 02:0b:13:a5:ec:d5) on 5745 MHz for monitor vdev 0
+mon-inject: first frame submitted, desc_id=0 vdev=4 len=47 chan=5745
+```
+
+- radiotap 剥离正确（55→47）；VDEV_CREATE/START/PEER_CREATE 全部成功；
+  WMI_MGMT_TX_SEND 被固件接受，无 WMI 错误、无 drop 计数；
+  qdisc 计数随注入持续增长（10/10、30+ pkt）。
+- 持续注入循环（/root/inj-loop.sh, 每 2.5s × 10 帧）稳定跑了 130+ 轮无衰减。
+- 36 与 149 两个信道都建立了辅助 vdev 并提交成功（切换信道需重启 monitor
+  会话——辅助 vdev chanfreq 在创建时固定，未实现信道跟随）。
+
+**未完成**：射频层证明。按验证纪律（第二台独立嗅探器实收才算 PASS）：
+- macOS `airport sniff` 已从新系统移除；`wdutil sniff` 在此 macOS
+  (Darwin 24.6) 无此子命令；`tcpdump -i en0 -I` 30 秒 0 包（连环境帧都没有，
+  Apple Silicon 监听模式基本不可用）。
+- 可行路径：Wireless Diagnostics GUI（Window→Sniffer→信道 149）或找一台
+  支持监听的 Linux/Android 设备。用户暂缓 → 状态 BLOCKED(待双机验证)。
+
+**操作经验**：
+- 每次 boot 后第一次 `echo 4 > con_mode` 常 EIO（驱动收尾中），等 3-10s
+  重试 1-3 次即成功。inject-test.sh 应带重试。
+- pkill 自匹配陷阱再次咬人：远程命令行里含模式串时 `pkill -f` 会杀掉
+  执行它的 shell 本身。统一用 `pkill -f "inj-l[o]op"` 括号写法。
+- setsid 启动的脚本必须 chmod +x，否则静默失败。
