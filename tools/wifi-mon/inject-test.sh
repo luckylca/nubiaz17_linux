@@ -29,7 +29,15 @@ ip link set wlan0 down 2>/dev/null
 sleep 1
 
 echo "== switch con_mode -> 4 (monitor)"
-echo 4 > /sys/module/wlan/parameters/con_mode || { echo "FAIL: con_mode write"; exit 1; }
+# the first write after boot/wpa-kill often EIOs (driver still settling);
+# 3-10s later it succeeds. Retry a few times.
+ok=0
+for t in 1 2 3 4; do
+  echo 4 > /sys/module/wlan/parameters/con_mode 2>/dev/null && { ok=1; break; }
+  echo "con_mode attempt $t failed (EIO), retry in 3s"
+  sleep 3
+done
+[ "$ok" = 1 ] || { echo "FAIL: con_mode write after retries"; exit 1; }
 sleep 4
 iw dev | grep -A2 wlan0
 
