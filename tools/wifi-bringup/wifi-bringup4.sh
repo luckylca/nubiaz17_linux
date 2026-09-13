@@ -107,6 +107,17 @@ cp /vendor/firmware/wlan/qca_cld/WCNSS_qcom_cfg.ini /fwimage/wlan/qca_cld/ 2>/de
 cp /vendor/firmware/wlan/qca_cld/wlan_mac.bin /fwimage/wlan/qca_cld/ 2>/dev/null
 cp /fwimage/wlan/qca_cld/* /proc/1/root/fwimage/wlan/qca_cld/ 2>/dev/null
 
+# ADSP/tasha audio (2026-09-13, task #22 root cause): kernel-side
+# request_firmware("adsp.mdt") runs in PID1's mount namespace — the chroot's
+# /fwimage staging is INVISIBLE to it, so PIL always failed with -EAGAIN
+# after a 60 s uevent timeout and the ADSP never booted (no SLIMbus codec,
+# no sound card). Stage adsp.* and the tas2555 amp firmware into PID1's
+# ramfs /fwimage as well, then kick the adsp-loader.
+cp /fwimage/adsp.b* /fwimage/adsp.mdt /proc/1/root/fwimage/ 2>/dev/null
+cp -n /vendor/firmware/tas2555_uCDSP.bin /fwimage/ 2>/dev/null
+cp -n /fwimage/tas2555_uCDSP.bin /proc/1/root/fwimage/ 2>/dev/null
+echo 1 > /sys/kernel/boot_adsp/boot 2>/dev/null
+
 # --- 2. device node perms --------------------------------------------------
 chmod 0666 /dev/diag /dev/uio0 2>/dev/null
 
