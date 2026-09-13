@@ -13,15 +13,14 @@
 # plus FB_BLANK_POWERDOWN. Wake reverses it in the order proven by
 # desktop.sh: unblank, re-arm mdss autorefresh, ONE fb-kick pan (never
 # loop the pan — a ticker deadlocks the mdss dsi_event thread), restore
-# brightness. While the screen is off both touch devices are EVIOCGRABed
+# brightness. While the screen is off the touch forwarder is SIGSTOPped
 # so phantom taps cannot reach X.
 #
 # Started from /root/.xinitrc (desktop session scope). Log:
 # /var/log/keys-daemon.log
-import array
-import fcntl
 import os
 import select
+import signal
 import struct
 import subprocess
 import sys
@@ -31,7 +30,6 @@ EV_KEY = 0x01
 KEY_POWER = 116
 KEY_VOLUMEDOWN = 114
 KEY_VOLUMEUP = 115
-EVIOCGRAB = 0x40044590
 EVENT = struct.Struct("qqHHi")  # arm64 evdev: sec, usec, type, code, value
 
 LCD = "/sys/class/leds/lcd-backlight/brightness"
@@ -45,7 +43,6 @@ WANT = {
     "qpnp_pon": {KEY_POWER, KEY_VOLUMEDOWN},
     "gpio-keys": {KEY_VOLUMEUP},
 }
-TOUCH_NAMES = ("nubia_synaptics_dsx", "nx563j-touch")
 
 
 def log(msg):
@@ -86,28 +83,25 @@ class Screen:
         self.off = False
         self.saved_lcd = 128
         self.saved_wled = 2048
-        self.touch_fds = []
 
     def _grab(self, grab):
-        for name in TOUCH_NAMES:
-            path = find_event(name)
-            if not path:
-                continue
+        # Phantom-tap shield while the screen is off. EVIOCGRAB does not
+        # work here (observed EBUSY 2026-09-13): touch-forward permanently
+        # grabs the real panel device, and something in X holds the uinput
+        # clone. Freeze the forwarder instead — no events, no taps.
+        try:
+            pids = subprocess.check_output(["pgrep", "-f", "touch-forward"])
+        except subprocess.CalledProcessError:
+            return
+        for pid in pids.split():
             try:
-                fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-                fcntl.ioctl(fd, EVIOCGRAB, 1 if grab else 0)
-                self.touch_fds.append(fd)  # keep open: grab dies with the fd
-            except OSError as e:
-                log("grab %s=%s failed: %s" % (name, grab, e))
+                os.kill(int(pid), signal.SIGSTOP if grab else signal.SIGCONT)
+            except (ProcessLookupError, ValueError):
+                pass
+        log("touch-forward %s" % ("STOPPED" if grab else "RESUMED"))
 
     def _ungrab(self):
-        for fd in self.touch_fds:
-            try:
-                fcntl.ioctl(fd, EVIOCGRAB, 0)
-                os.close(fd)
-            except OSError:
-                pass
-        self.touch_fds = []
+        self._grab(False)
 
     def toggle(self):
         if self.off:
