@@ -160,3 +160,12 @@
   单次 pan(严禁循环）→ 恢复亮度 → 释放触摸。ssh 手动全序列实测 PASS。
 - 音量键 = 亮度 ±8%（声卡不存在，#22 修好后再改回音量）。
 - 自启：/root/.xinitrc(桌面会话范围）。
+
+### #28 按键实测收尾（PASS）
+- 电源键：两次完整息屏/亮屏循环（10:52、11:05 日志），第二次循环
+  touch-forward SIGSTOP/CONT 屏蔽触摸生效，无 EBUSY。
+- 音量键：音量下 49%→9% 连降、音量上回升，方向正确；亮度下限由
+  滑块的 MIN_PCT=5 兜住（设 1% 被钳到 5%）。
+- 触摸屏蔽从 EVIOCGRAB 改为 SIGSTOP touch-forward：真实触摸设备被
+  forwarder 常抓、uinput 克隆被 X 持有，GRAB 必 EBUSY。
+- 外放仍阻塞于 #22(ADSP PIL invalid resource),音量键暂映射亮度。
