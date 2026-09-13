@@ -139,3 +139,24 @@
 - 键盘：kbd-toggle.sh 全程 flock 串行化（双击竞态下两个进程都通过
   pidof 检查 → 各起一个键盘）。注意 matchbox-keyboard 启动必须 9>&-
   关掉锁 fd，否则它终身持锁，之后的切换全部死等（实测挂死一次）。
+
+## 2026-09-13 BT 常驻看门狗 + 物理按键（#28 进行中）
+
+### BT 自起改为永久看门狗
+- 故障：halt 循环后的开机里，supervisor 三次 attach 全遇 TIOCSETD N_HCI
+  EINVAL（早启瞬时态），达到 3 次上限后放弃；且旧逻辑见到 bluetoothd
+  一次就退出，运行期蓝牙栈丢失无人能救。
+- 修复（tools/wifi-bringup/wifi-bringup4.sh）：supervisor 改 while-true
+  永久看门狗，attach 每轮 12 次、耗尽后重新 hci_qcomm_init 初始化芯片
+  再来一轮；bluetoothd 消失会重启。部署 /root/wifi-bringup4.sh，下次
+  开机生效。当次已手动 attach + bluetoothd 恢复（hci0 UP RUNNING）。
+
+### 物理按键（keys-daemon.py）
+- 设备：qpnp_pon(event0)=电源键 116 + 音量下 114;gpio-keys(event5)=
+  音量上 115。按名字解析 /dev/input/event*,evdev 直读。
+- 电源键短按 = 息屏/亮屏：息屏时保存并清零 lcd-backlight+wled、
+  FB_BLANK_POWERDOWN,EVIOCGRAB 两个触摸设备防误触；亮屏按 desktop.sh
+  验证过的顺序：unblank → 重臂 msm_cmd_autorefresh_en → fb-kick.py
+  单次 pan(严禁循环）→ 恢复亮度 → 释放触摸。ssh 手动全序列实测 PASS。
+- 音量键 = 亮度 ±8%（声卡不存在，#22 修好后再改回音量）。
+- 自启：/root/.xinitrc(桌面会话范围）。

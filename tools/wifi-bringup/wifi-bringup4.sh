@@ -277,6 +277,13 @@ for i in $(seq 1 60); do
 		#    cannot survive that, so this is a SUPERVISOR: every 10s it
 		#    re-evaluates the stack and takes the one idempotent step that
 		#    moves it toward bluetoothd. Every step is safe to repeat.
+		#  - 2026-09-13: turned into a PERMANENT WATCHDOG. The old version
+		#    exited the moment bluetoothd was seen once, and capped attach
+		#    at 3 tries — so 3 transient TIOCSETD N_HCI EINVALs at boot
+		#    (observed after a halt-cycle boot) or a later runtime stack
+		#    loss left BT dead until manual repair. Now it never exits;
+		#    12 attach tries per round, then re-primes the chip via
+		#    hci_qcomm_init and starts over.
 		if [ -x /vendor/bin/hci_qcomm_init ]; then
 			setsid /bin/sh -c "
 				PATH=/bin:/sbin:/usr/bin:/usr/sbin; export PATH
@@ -285,8 +292,7 @@ for i in $(seq 1 60); do
 				init_tries=0
 				attach_tries=0
 				up_tries=0
-				for n in \$(seq 1 60); do
-					pidof bluetoothd >/dev/null 2>&1 && exit 0
+				while true; do
 					if [ -d /sys/class/bluetooth/hci0 ]; then
 						if hciconfig hci0 2>/dev/null | grep -q \"UP RUNNING\"; then
 							pidof dbus-daemon >/dev/null 2>&1 || {
@@ -294,23 +300,33 @@ for i in $(seq 1 60); do
 								rm -f /run/dbus/dbus.pid /run/dbus/system_bus_socket
 								dbus-daemon --system --fork 2>/dev/null
 							}
-							[ -n "$BTD" ] && \
-								setsid $BTD \
-									>>/var/log/bluetoothd.log 2>&1
+							pidof bluetoothd >/dev/null 2>&1 || {
+								[ -n "$BTD" ] && \
+									setsid $BTD \
+										>>/var/log/bluetoothd.log 2>&1
+							}
 							hciconfig hci0 name nx563j-linux >>/var/log/hciattach.log 2>&1
+							up_tries=0
 						elif [ \$up_tries -lt 6 ]; then
 							up_tries=\$((up_tries+1))
 							hciconfig hci0 up >>/var/log/hciattach.log 2>&1
 						fi
 					elif pidof hciattach-qca >/dev/null 2>&1; then
 						: # holder alive; hci0 is on its way
-					elif [ \$init_done = 1 ] && [ \$attach_tries -lt 3 ]; then
+					elif [ \$init_done = 1 ]; then
 						attach_tries=\$((attach_tries+1))
 						echo \"supervisor: attach try \$attach_tries\" \
 							>>/var/log/hciattach.log
 						setsid /root/hciattach-qca /dev/ttyHS0 3000000 \
 							>>/var/log/hciattach.log 2>&1
-					elif [ \$init_done = 0 ] && [ \$init_tries -lt 2 ]; then
+						if [ \$attach_tries -ge 12 ]; then
+							attach_tries=0
+							init_done=0
+							init_tries=0
+							echo \"supervisor: re-priming via hci_qcomm_init\" \
+								>>/var/log/hciattach.log
+						fi
+					elif [ \$init_tries -lt 2 ]; then
 						init_tries=\$((init_tries+1))
 						LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
 							/vendor/bin/hci_qcomm_init -e -N \
@@ -318,8 +334,6 @@ for i in $(seq 1 60); do
 					fi
 					sleep 10
 				done
-				echo \"supervisor: gave up init_done=\$init_done init=\$init_tries attach=\$attach_tries up=\$up_tries\" \
-					>>/var/log/hciattach.log
 			" >/dev/null 2>&1 &
 		fi
 		exit 0
