@@ -169,3 +169,52 @@
 - 触摸屏蔽从 EVIOCGRAB 改为 SIGSTOP touch-forward：真实触摸设备被
   forwarder 常抓、uinput 克隆被 X 持有，GRAB 必 EBUSY。
 - 外放仍阻塞于 #22(ADSP PIL invalid resource),音量键暂映射亮度。
+
+## 2026-09-14 #22 外放攻破（PASS,用户实测听到声音）
+
+### 完整根因链（四层）
+1. **ADSP 不启动**:内核 request_firmware("adsp.mdt") 运行在 PID1 的
+   mount namespace(initramfs ramfs /fwimage,只放了 wlan 固件),chroot
+   里 staging 的 /fwimage 对它不可见 → PIL 60s uevent 超时 -EAGAIN →
+   ADSP 永不启动 → 无 QMI SLIM 服务 → tasha codec 不枚举 → 声卡永远
+   EPROBE_DEFER。修复:staging 同时写 /proc/1/root/fwimage/ 再
+   echo 1 > /sys/kernel/boot_adsp/boot(已入 wifi-bringup4.sh,
+   开机自动)。
+2. **tas2555 功放固件竞态**:驱动 ~1.6s request_firmware_nowait 早于
+   staging → 60s 超时。且**功放掉电即丢固件**,下次流启动 setup_clocks
+   报 "Firmware not loaded",enable 时不跑 startup/unmute 程序 → 静音。
+   固件 block CRC 校验还需要 I2S 时钟在跑 → 必须在流打开时重载
+   (TAS_FWLoad kcontrol)。
+3. **QUAT_MI2S 路由是死的**:声卡 DT 节点(NX563J/audio.dtsi &snd_9335)
+   没有 quat-mi2s-active/sleep pinctrl 状态 → msm_get_pinctrl 失败
+   (dmesg "MI2S TLMM pinctrl set failed with -22"),gpio57-60 永不复用;
+   且 gpio59/60 被 nubia_hw_gpio_ctrl 以 GPIO 名义占走。stock 其实用
+   **PRI_MI2S**(mixer_paths "speaker" 路径 = SLIMBUS_0_RX +
+   PRI_MI2S_RX),prim DAI 驱动自带 pinctrl,零 DT 改动。
+4. **mixer_paths 误导**:"speaker-mono-2" 路径引用的 SpkrRight 控件在
+   本机不存在(WSA max-devs=0,DAPM 路由建立失败日志可证),tasha 内部
+   SPKR 通路不适用于 nx563j。
+
+### 工作链路(实测 PASS)
+MultiMedia1 → 'PRI_MI2S_RX Audio Mixer MultiMedia1'=1,1 →
+AFE PRI_MI2S_RX(0x1000) → TLMM gpio65-68(pri_mi2s 复用) →
+tas2555(i2c 6-004c,"Enable: load startup sequence"+"load unmute
+sequence") → 扬声器。gpio69(spkr_i2s/MCLK)由 audio_ext_clk 持有。
+
+### 落地文件
+- tools/audio/audio-setup.sh:声卡出现后铺静态 mixer 路径(PRI 路由 +
+  关 QUAT + Playback 0 Volume=0 即 0dB)。
+- tools/audio/audio-fw-watchdog.sh:监听 pcm0p/sub0/status 的
+  **owner_pid**(注意:q6asm 播放全程报 DRAINING,永不报 RUNNING),
+  关闭→打开跳变时 amixer TAS_FWLoad 1 → 时钟在跑,固件加载
+  "YChkSum match" → unmute。每次流启动自动完成。
+- 两者已挂入 wifi-bringup4.sh 音频 staging 之后,开机自起。
+- keys-daemon.py:音量键改调 'Playback 0 Volume'(±400≈4dB,0-8192,
+  0=0dB 单位增益),不再当亮度用。
+
+### 验证记录
+- 手动全序列(PRI 路由 + 播放中 TAS_FWLoad):880/660Hz 音阶,
+  **用户确认听到**(2026-09-14)。
+- 看门狗自动触发:日志 "playback opened -> TAS_FWLoad poked",
+  dmesg Enable:1 + startup + unmute sequence。
+- 重启全链路(开机自起 ADSP→声卡→路径→看门狗→首放音)见下节结果。
