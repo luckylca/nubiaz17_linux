@@ -1,0 +1,26 @@
+# NetHunter misc capabilities — Phases 8/9/12 kernel-side enablement.
+# (Keep CONFIG_* tokens out of comment text; the CI merge greps for them.)
+#
+# Phase 8: USB Bluetooth dongle (csr/BCM/etc. over USB)
+#   config symbol: BT HCIBTUSB
+# Phase 9: SocketCAN — in-tree gs_usb (candleLight/CANable/CANtact clones)
+#   config symbols: CAN, CAN_RAW, CAN_BCM, CAN_GS_USB(=gs_usb)
+# Phase 12: NFS client (mount over usb0/Wi-Fi; Mac/Linux NFS server)
+#   config symbol: NFS FS (V3 is default-on with it)
+# Phase 10 (SDR) needs no kernel config — librtlsdr is pure userspace USB.
+# Phase 11 (USB Ethernet): RTL8150/8152 already =y in the defconfig.
+#
+# NOTE: actual hardware verification of each is WAITING_FOR_HARDWARE until
+# the OTG cable + adapters arrive; these options only stage the drivers.
+
+CONFIG_BT_HCIBTUSB=y
+
+CONFIG_CAN=y
+CONFIG_CAN_RAW=y
+CONFIG_CAN_BCM=y
+CONFIG_CAN_GS_USB=y
+
+CONFIG_NFS_FS=y
+CONFIG_NFS_V3_ACL=y
+CONFIG_NFS_V4=y
+CONFIG_ROOT_NFS=n
