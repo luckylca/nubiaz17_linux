@@ -1,0 +1,138 @@
+From a8d3a95f8ef7ec4fe358d93025cf01fd7bccb281 Mon Sep 17 00:00:00 2001
+From: Claude Code <noreply@anthropic.com>
+Date: Mon, 14 Sep 2026 21:52:42 +0800
+Subject: [PATCH] ath9k_htc: prefix htc_start/htc_stop/htc_connect_service to
+ avoid qcacld collision
+
+---
+ drivers/net/wireless/ath/ath9k/htc_drv_init.c | 2 +-
+ drivers/net/wireless/ath/ath9k/htc_drv_main.c | 6 +++---
+ drivers/net/wireless/ath/ath9k/htc_drv_txrx.c | 2 +-
+ drivers/net/wireless/ath/ath9k/htc_hst.c      | 6 +++---
+ drivers/net/wireless/ath/ath9k/htc_hst.h      | 6 +++---
+ drivers/net/wireless/ath/ath9k/wmi.c          | 2 +-
+ 6 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath9k/htc_drv_init.c b/drivers/net/wireless/ath/ath9k/htc_drv_init.c
+index e21df6e..eabb3e2 100644
+--- a/drivers/net/wireless/ath/ath9k/htc_drv_init.c
++++ b/drivers/net/wireless/ath/ath9k/htc_drv_init.c
+@@ -134,7 +134,7 @@ static inline int ath9k_htc_connect_svc(struct ath9k_htc_priv *priv,
+ 	req.ep_callbacks.rx = ath9k_htc_rxep;
+ 	req.ep_callbacks.tx = tx;
+ 
+-	return htc_connect_service(priv->htc, &req, ep_id);
++	return htc_hst_connect_service(priv->htc, &req, ep_id);
+ }
+ 
+ static int ath9k_init_htc_services(struct ath9k_htc_priv *priv, u16 devid,
+diff --git a/drivers/net/wireless/ath/ath9k/htc_drv_main.c b/drivers/net/wireless/ath/ath9k/htc_drv_main.c
+index e32e35b..1c2cee0 100644
+--- a/drivers/net/wireless/ath/ath9k/htc_drv_main.c
++++ b/drivers/net/wireless/ath/ath9k/htc_drv_main.c
+@@ -226,7 +226,7 @@ void ath9k_htc_reset(struct ath9k_htc_priv *priv)
+ 	WMI_CMD_BUF(WMI_SET_MODE_CMDID, &htc_mode);
+ 
+ 	WMI_CMD(WMI_ENABLE_INTR_CMDID);
+-	htc_start(priv->htc);
++	htc_hst_start(priv->htc);
+ 	ath9k_htc_vif_reconfig(priv);
+ 	ieee80211_wake_queues(priv->hw);
+ 
+@@ -305,7 +305,7 @@ static int ath9k_htc_set_channel(struct ath9k_htc_priv *priv,
+ 	if (ret)
+ 		goto err;
+ 
+-	htc_start(priv->htc);
++	htc_hst_start(priv->htc);
+ 
+ 	if (!test_bit(ATH_OP_SCANNING, &common->op_flags) &&
+ 	    !(hw->conf.flags & IEEE80211_CONF_OFFCHANNEL))
+@@ -958,7 +958,7 @@ static int ath9k_htc_start(struct ieee80211_hw *hw)
+ 			"Failed to update capability in target\n");
+ 
+ 	clear_bit(ATH_OP_INVALID, &common->op_flags);
+-	htc_start(priv->htc);
++	htc_hst_start(priv->htc);
+ 
+ 	spin_lock_bh(&priv->tx.tx_lock);
+ 	priv->tx.flags &= ~ATH9K_HTC_OP_TX_QUEUES_STOP;
+diff --git a/drivers/net/wireless/ath/ath9k/htc_drv_txrx.c b/drivers/net/wireless/ath/ath9k/htc_drv_txrx.c
+index 6a9c9b4..9a4c868 100644
+--- a/drivers/net/wireless/ath/ath9k/htc_drv_txrx.c
++++ b/drivers/net/wireless/ath/ath9k/htc_drv_txrx.c
+@@ -543,7 +543,7 @@ void ath9k_htc_tx_drain(struct ath9k_htc_priv *priv)
+ 	 * Ensure that all pending TX frames are flushed,
+ 	 * and that the TX completion/failed tasklets is killed.
+ 	 */
+-	htc_stop(priv->htc);
++	htc_hst_stop(priv->htc);
+ 	tasklet_kill(&priv->wmi->wmi_event_tasklet);
+ 	tasklet_kill(&priv->tx_failed_tasklet);
+ 
+diff --git a/drivers/net/wireless/ath/ath9k/htc_hst.c b/drivers/net/wireless/ath/ath9k/htc_hst.c
+index 625823e..86579d7 100644
+--- a/drivers/net/wireless/ath/ath9k/htc_hst.c
++++ b/drivers/net/wireless/ath/ath9k/htc_hst.c
+@@ -236,7 +236,7 @@ int htc_init(struct htc_target *target)
+ 	return htc_setup_complete(target);
+ }
+ 
+-int htc_connect_service(struct htc_target *target,
++int htc_hst_connect_service(struct htc_target *target,
+ 		     struct htc_service_connreq *service_connreq,
+ 		     enum htc_endpoint_id *conn_rsp_epid)
+ {
+@@ -311,12 +311,12 @@ int htc_send_epid(struct htc_target *target, struct sk_buff *skb,
+ 	return htc_issue_send(target, skb, skb->len, 0, epid);
+ }
+ 
+-void htc_stop(struct htc_target *target)
++void htc_hst_stop(struct htc_target *target)
+ {
+ 	target->hif->stop(target->hif_dev);
+ }
+ 
+-void htc_start(struct htc_target *target)
++void htc_hst_start(struct htc_target *target)
+ {
+ 	target->hif->start(target->hif_dev);
+ }
+diff --git a/drivers/net/wireless/ath/ath9k/htc_hst.h b/drivers/net/wireless/ath/ath9k/htc_hst.h
+index 06474cc..723db0f 100644
+--- a/drivers/net/wireless/ath/ath9k/htc_hst.h
++++ b/drivers/net/wireless/ath/ath9k/htc_hst.h
+@@ -203,14 +203,14 @@ struct htc_comp_msg {
+ } __packed;
+ 
+ int htc_init(struct htc_target *target);
+-int htc_connect_service(struct htc_target *target,
++int htc_hst_connect_service(struct htc_target *target,
+ 			  struct htc_service_connreq *service_connreq,
+ 			  enum htc_endpoint_id *conn_rsp_eid);
+ int htc_send(struct htc_target *target, struct sk_buff *skb);
+ int htc_send_epid(struct htc_target *target, struct sk_buff *skb,
+ 		  enum htc_endpoint_id epid);
+-void htc_stop(struct htc_target *target);
+-void htc_start(struct htc_target *target);
++void htc_hst_stop(struct htc_target *target);
++void htc_hst_start(struct htc_target *target);
+ void htc_sta_drain(struct htc_target *target, u8 idx);
+ 
+ void ath9k_htc_rx_msg(struct htc_target *htc_handle,
+diff --git a/drivers/net/wireless/ath/ath9k/wmi.c b/drivers/net/wireless/ath/ath9k/wmi.c
+index f100533..cb8d443 100644
+--- a/drivers/net/wireless/ath/ath9k/wmi.c
++++ b/drivers/net/wireless/ath/ath9k/wmi.c
+@@ -264,7 +264,7 @@ int ath9k_wmi_connect(struct htc_target *htc, struct wmi *wmi,
+ 	connect.ep_callbacks.rx = ath9k_wmi_ctrl_rx;
+ 	connect.service_id = WMI_CONTROL_SVC;
+ 
+-	ret = htc_connect_service(htc, &connect, &wmi->ctrl_epid);
++	ret = htc_hst_connect_service(htc, &connect, &wmi->ctrl_epid);
+ 	if (ret)
+ 		return ret;
+ 
+-- 
+2.39.5 (Apple Git-154)
+
