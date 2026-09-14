@@ -5,14 +5,9 @@ Subject: [PATCH] ath9k: demote ar9003_eeprom constant-conversion to warning
 
 This tree builds with clang -Werror; ar9003_eeprom.c intentionally
 narrows regdomain dBm table constants from int to u8, which clang flags
-as -Wconstant-conversion errors:
-
-  drivers/net/wireless/ath/ath9k/ar9003_eeprom.c:563:39: error:
-      implicit conversion from 'int' to 'u8' changes value from 3495 to
-      167 [-Werror,-Wconstant-conversion]
-
-Demote the diagnostic for this file only (ath9k_hw is pulled in by
-CONFIG_ATH9K_HTC for the NetHunter external-USB-WiFi phase).
+as -Wconstant-conversion errors. Demote the diagnostic for this file
+only (ath9k_hw is pulled in by CONFIG_ATH9K_HTC for the NetHunter
+external-USB-WiFi phase).
 ---
  drivers/net/wireless/ath/ath9k/Makefile | 5 +++++
  1 file changed, 5 insertions(+)
@@ -21,13 +16,14 @@ diff --git a/drivers/net/wireless/ath/ath9k/Makefile b/drivers/net/wireless/ath/
 index 000000000000..000000000000 100644
 --- a/drivers/net/wireless/ath/ath9k/Makefile
 +++ b/drivers/net/wireless/ath/ath9k/Makefile
-@@ -74,3 +74,8 @@ ath9k_htc-$(CONFIG_ATH9K_HTC_DEBUGFS) += htc_drv_debug.o
-
+@@ -74,3 +74,8 @@
+ ath9k_htc-$(CONFIG_ATH9K_HTC_DEBUGFS) += htc_drv_debug.o
+ 
  obj-$(CONFIG_ATH9K_HTC) += ath9k_htc.o
 +
 +# 2026-09-14: clang -Werror turns the eeprom regdomain int->u8 narrowing
 +# into a hard error on this 4.4 tree; the values are intentional (dBm
 +# tables), so demote just this file.
 +CFLAGS_ar9003_eeprom.o += -Wno-constant-conversion
---
+-- 
 2.39.0
