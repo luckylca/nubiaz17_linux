@@ -18,7 +18,7 @@ WAITING_FOR_HARDWARE。
 | SocketCAN | — | — | — | 未开始 | WAITING_FOR_HARDWARE | Phase 9 |
 | SDR | — | — | — | 未开始 | WAITING_FOR_HARDWARE | Phase 10 |
 | USB 以太网 | — | — | — | 未开始 | BLOCKED | Phase 11 |
-| NFS | — | — | — | 未开始 | BLOCKED | Phase 12 |
+| NFS 客户端 | NFS_FS=y/NFS_V4=y (config/downstream-nethunter-misc.fragment) | 内核 NFS v3/v4 client, 内建 | mount.nfs (nfs-common 手工 dpkg) | 2026-09-15: 实机挂载 Mac nfsd 成功: `mount -t nfs -o nolock,vers=3,tcp 10.42.0.33:/private/tmp/nfs-export /mnt/nfs` rc=0; 双向读写实收 (hello-from-mac.txt 读出, hello-from-device.txt 写入 Mac 可见); 16MB direct-IO 写入 1.1 MB/s (USB gadget 链路瓶颈, 非 NFS 问题) | **PASS** | Phase 12; 走 usb1/en156 第二对 (10.42.0.2↔10.42.0.33)——usb0/en155 对设备→Mac 方向有单通怪癖 (ARP FAILED, 主机回包不到), Mac→设备 ssh 正常; 内核 4.4.302-perf+ (daily2, SHA256 419b4ba7…, CI 34853553552) |
 
 ## 验证纪律
 

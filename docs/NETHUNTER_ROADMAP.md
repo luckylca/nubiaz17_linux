@@ -20,7 +20,7 @@
 | 9 | SocketCAN (gs_usb) | ⏳ 驱动已预置 | WAITING_FOR_HARDWARE |
 | 10 | SDR (RTL-SDR) | ⏳ 纯用户态, 依赖 Phase 6 | WAITING_FOR_HARDWARE |
 | 11 | USB 以太网 (RTL815x) | ⏳ defconfig 已 =y | WAITING_FOR_HARDWARE |
-| 12 | NFS | 🟡 配置已预置(NFS_FS/V3/V4) | 待新内核; 之后用 Mac nfsd over usb0 实测 |
+| 12 | NFS | ✅ **PASS** | 2026-09-15 实机挂载 Mac nfsd 双向读写验证; 走 usb1/en156 第二对 (usb0 对设备→Mac 单通) |
 | 13 | config 片段整合 | ✅ daily fragment 机制 | CI 每次只 merge 一个 fragment |
 | 14 | 回归测试 | 🟡 持续 | 每次新内核刷入后回归 BT/音频/HID |
 | 15 | 能力矩阵定稿 | 🟡 持续维护 | docs/NETHUNTER_CAPABILITIES.md |
