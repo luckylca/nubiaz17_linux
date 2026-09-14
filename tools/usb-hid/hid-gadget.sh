@@ -25,8 +25,13 @@ mountpoint -q /config 2>/dev/null || { mkdir -p /config; mount -t configfs none 
 
 # Standard boot-protocol keyboard report descriptor (63 bytes, 8-byte report)
 KBD_DESC='05010906a101050719e029e71500250175019508810295017508810195057501050819012905910295017503910195067508150025650507190029658100c0'
-# 3-button mouse + wheel (52 bytes, reports: buttons/dx/dy[/wheel])
-MOUSE_DESC='05010902a1010901a0000509190129031500250195037501810295017505810105010930093109381581257f750895038106c0c0'
+# Canonical 3-button mouse (46 bytes, 3-byte reports: buttons, dx, dy).
+# This exact descriptor is the one that WORKS on macOS (2026-09-14):
+#  - 4-byte wheel variant: enumerated as a mouse but pointer never moved
+#  - report_length shorter than the descriptor's report: silently dropped
+#  - subclass=1/protocol=2 (boot): ambiguous report length under boot
+#    protocol, pointer dead. subclass=0/protocol=0 + this desc: pointer moves.
+MOUSE_DESC='05010902a1010901a000050919012903150025019503750181029501750581010501093009311581257f750895028106c0c0'
 
 if [ "${1:-}" = "remove" ]; then
   echo "" > $G/UDC 2>/dev/null
@@ -51,8 +56,8 @@ echo 8      > $G/functions/hid.usb0/report_length
 python3 -c "import os;os.write(1,bytes.fromhex('$KBD_DESC'))" > $G/functions/hid.usb0/report_desc
 
 mkdir -p $G/functions/hid.usb1
-echo 2      > $G/functions/hid.usb1/protocol   # mouse
-echo 1      > $G/functions/hid.usb1/subclass
+echo 0      > $G/functions/hid.usb1/protocol   # report protocol only (boot mode broke macOS, see MOUSE_DESC)
+echo 0      > $G/functions/hid.usb1/subclass
 echo 3      > $G/functions/hid.usb1/report_length
 python3 -c "import os;os.write(1,bytes.fromhex('$MOUSE_DESC'))" > $G/functions/hid.usb1/report_desc
 

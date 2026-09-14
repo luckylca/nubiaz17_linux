@@ -28,6 +28,11 @@ HID 键盘打出来的字会进入**当前焦点窗口**。步骤：
 5. 鼠标验证（hidg1）：手机端写 3 字节 report（buttons, dx, dy），
    Mac 上观察指针移动：
    `printf '\\x00\\x28\\x00' > /dev/hidg1`（右移 40px）
+   ⚠️ 2026-09-14 实测：描述符必须用最经典的 3 字节无 wheel 版本
+   （report_length=3, subclass=0, protocol=0）。带 wheel 的 4 字节版
+   和 boot protocol（subclass=1/protocol=2）在 macOS 上都枚举为鼠标
+   但指针不动。macOS 指针加速会抑制慢速小步：演示用快速连发
+   （while 循环无 sleep, dx=0x60+）或方形绕圈。
 
 ## 记录要求（按能力矩阵纪律）
 
