@@ -218,3 +218,41 @@ sequence") → 扬声器。gpio69(spkr_i2s/MCLK)由 audio_ext_clk 持有。
 - 看门狗自动触发:日志 "playback opened -> TAS_FWLoad poked",
   dmesg Enable:1 + startup + unmute sequence。
 - 重启全链路(开机自起 ADSP→声卡→路径→看门狗→首放音)见下节结果。
+
+## 2026-09-14 #29 PulseAudio 桌面音频（PASS,用户实测）
+
+### 动机
+'Playback 0 Volume'(FE 软音量)范围 0..8192 = 0..+82dB **只能增益**,
+且流关闭即复位 → 音量键"音量- 没反应"(已在 0dB 下限)。需要真正的
+衰减与持久音量。
+
+### 落地
+- pulseaudio 16.1(system 模式,--exit-idle-time=-1),配置
+  tools/audio/system.pa:sink "speaker" = hw:0,0 tsched=0 **rate=48000**
+  (tas2555 加载的配置是 48k,驱动对采样率不匹配直接拒绝)、
+  native socket /var/run/pulse/native 免认证、suspend-on-idle 闲时释放
+  设备(省电,重新打开由 FW 看门狗兜底)。
+- /dev/snd/* 0600 root:root → pulse 用户打不开,报误导性
+  "No such file or directory":audio-setup.sh 里 chmod 0666。
+- **启动顺序坑**:pulse 必须在声卡注册之后启动,否则 alsa-sink 加载
+  失败、server 起来零 sink(第一次冷启动踩中)。pulse 启动移到
+  audio-setup.sh 末尾。
+- **mixer 回读验证**:声卡刚注册时路由服务可能静默吞掉 cset(第二次
+  冷启动:路由没铺上,首次播放零 AFE/tas2555 活动)。audio-setup.sh
+  改为 cset + cget 回读,失败重试 10 次。
+- keys-daemon.py:音量键 → pactl ±5%(0-100%,带 pulse 不在时的
+  amixer 兜底)。日志 "volume 80% -> 75%" 双向验证。
+
+### 验证(全部用户实测)
+- paplay 660Hz:出声;看门狗在流打开时自动 TAS_FWLoad
+  ("playback opened -> TAS_FWLoad poked" → YChkSum match → unmute)。
+- 30% vs 100% 两遍对比:第二遍明显更响(软衰减生效)。
+- 音量键双向可调。
+- 冷启动 ×3 持久化:第三次起开机零干预首放即出声(路由回读 +
+  pulse 后置启动修复后)。
+
+### 附带:USB 代理应急通道
+Wi-Fi 未关联时,设备经 USB gadget 走 Mac 上网:/tmp/usbproxy.py
+(Mac 侧 CONNECT 代理 10.42.0.32:8080,免 sudo NAT)+ 设备
+ip route add default via 10.42.0.32 + apt -o Acquire::https::Proxy。
+设备时钟 1970 导致 TLS "certificate is not yet valid" 时需先 date -s。

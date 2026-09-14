@@ -2,13 +2,14 @@
 # keys-daemon.py — physical key handling for the NX563J Ubuntu desktop.
 #
 #   power key (qpnp_pon, KEY_POWER)      short press = screen off/on
-#   volume up   (gpio-keys, KEY_VOLUMEUP)   speaker volume +4dB
-#   volume down (qpnp_pon, KEY_VOLUMEDOWN)  speaker volume -4dB
+#   volume up   (gpio-keys, KEY_VOLUMEUP)   speaker volume +5%
+#   volume down (qpnp_pon, KEY_VOLUMEDOWN)  speaker volume -5%
 #
-# Volume keys drive 'Playback 0 Volume' (MultiMedia1 FE soft volume, card 0):
-# 0 = 0 dB unity, raw scale 0..8192 centi-dB-ish; step 400 ~= 4 dB.
-# (Before 2026-09-14 they adjusted brightness because the ADSP was dead and
-# there was no sound card; task #22 landed the tas2555 speaker path.)
+# Volume goes through PulseAudio (system instance, socket
+# /var/run/pulse/native): soft attenuation 0-100%, persists across streams.
+# (Before 2026-09-14 they adjusted brightness because the ADSP was dead;
+# then one day of raw 'Playback 0 Volume' which is boost-only 0..+82 dB and
+# resets to 0 on every stream close — see task #29.)
 # Brightness lives on the panel slider / brightness-slider.py.
 #
 # Screen-off is real power saving: backlight to 0 (lcd-backlight + wled)
@@ -134,24 +135,48 @@ class Screen:
         log("screen ON")
 
 
-VOL_CTL = "Playback 0 Volume"
-VOL_MAX = 8192
-VOL_STEP = 400  # ~4 dB per key press
+PULSE_ENV = dict(os.environ, PULSE_SERVER="unix:/var/run/pulse/native")
+VOL_STEP_PCT = 5
 
 
-def volume_step(delta):
+def _pulse_volume():
+    """Current PulseAudio speaker volume in percent, or None if pulse is down."""
     try:
         out = subprocess.check_output(
-            ["amixer", "-c0", "cget", "name=%s" % VOL_CTL],
+            ["pactl", "get-sink-volume", "speaker"],
+            env=PULSE_ENV, stderr=subprocess.DEVNULL).decode()
+        return int(out.split("/")[1].strip().rstrip("%"))
+    except (subprocess.CalledProcessError, IndexError, ValueError):
+        return None
+
+
+def volume_step(delta_pct):
+    """Adjust speaker volume through PulseAudio (persists across streams and
+    can attenuate below 0 dB, unlike the raw 'Playback 0 Volume' kcontrol
+    whose range is 0..8192 = 0..+82 dB boost only, and which resets to 0
+    every time the stream closes). Falls back to the raw kcontrol if pulse
+    is not running."""
+    cur = _pulse_volume()
+    if cur is not None:
+        new = max(0, min(100, cur + delta_pct))
+        subprocess.call(["pactl", "set-sink-volume", "speaker", "%d%%" % new],
+                        env=PULSE_ENV,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log("volume %d%% -> %d%%" % (cur, new))
+        return
+    # fallback: raw FE softvol (boost-only, resets on stream close)
+    try:
+        out = subprocess.check_output(
+            ["amixer", "-c0", "cget", "name=Playback 0 Volume"],
             stderr=subprocess.DEVNULL).decode()
         cur = int(out.split(": values=")[1].split(",")[0].split()[0])
     except (subprocess.CalledProcessError, IndexError, ValueError):
         cur = 0
-    new = max(0, min(VOL_MAX, cur + delta))
-    subprocess.call(["amixer", "-c0", "-q", "cset", "name=%s" % VOL_CTL,
-                     str(new)],
+    new = max(0, min(8192, cur + delta_pct * 80))
+    subprocess.call(["amixer", "-c0", "-q", "cset",
+                     "name=Playback 0 Volume", str(new)],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log("volume %d -> %d" % (cur, new))
+    log("volume(raw) %d -> %d" % (cur, new))
 
 
 def main():
@@ -184,9 +209,9 @@ def main():
                 if code == KEY_POWER and value == 1:
                     screen.toggle()
                 elif code == KEY_VOLUMEUP and value in (1, 2):
-                    volume_step(+VOL_STEP)
+                    volume_step(+VOL_STEP_PCT)
                 elif code == KEY_VOLUMEDOWN and value in (1, 2):
-                    volume_step(-VOL_STEP)
+                    volume_step(-VOL_STEP_PCT)
 
 
 if __name__ == "__main__":

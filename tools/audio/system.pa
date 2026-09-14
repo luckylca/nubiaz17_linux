@@ -1,0 +1,32 @@
+#!/usr/bin/pulseaudio -nF
+# system.pa — NX563J PulseAudio system-mode config (task #29)
+#
+# Runs as: pulseaudio --system -D --exit-idle-time=-1
+# Sink is the raw ADSP/tas2555 chain; tsched=0 because the q6asm ALSA
+# driver does not implement reliable timer-based scheduling (rewindable
+# ring). FW reload on stream open is handled by audio-fw-watchdog.sh.
+
+.fail
+
+### Speaker sink: MultiMedia1 -> PRI_MI2S_RX -> tas2555
+### (48000 Hz fixed: the tas2555's loaded configuration is 48 kHz, and the
+### driver refuses mismatches with "Sampling rate ... does not match")
+load-module module-alsa-sink device=hw:0,0 tsched=0 rate=48000 channels=2 sink_name=speaker sink_properties=device.description="Speaker"
+set-default-sink speaker
+
+### Access: root desktop talks over the system socket
+.ifexists module-native-protocol-unix.so
+load-module module-native-protocol-unix auth-anonymous=1 socket=/var/run/pulse/native
+.endif
+
+### Power: release the ALSA device (and the amp) when idle
+.ifexists module-suspend-on-idle.so
+load-module module-suspend-on-idle
+.endif
+
+### Keep volumes per-stream, no weird flat-volume forcing
+.ifexists module-stream-restore.so
+load-module module-stream-restore
+.endif
+
+.nofail

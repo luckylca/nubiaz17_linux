@@ -131,6 +131,8 @@ echo 1 > /sys/kernel/boot_adsp/boot 2>/dev/null
 [ -x /root/audio-setup.sh ] && setsid /root/audio-setup.sh >>/var/log/audio-setup.log 2>&1 &
 [ -x /root/audio-fw-watchdog.sh ] && ! pidof audio-fw-watchdog.sh >/dev/null 2>&1 && \
 	setsid /root/audio-fw-watchdog.sh >/dev/null 2>&1 &
+# NOTE: PulseAudio is started at the END of audio-setup.sh, not here — its
+# alsa sink needs the sound card to already exist (cold boot race 2026-09-14).
 
 # --- 2. device node perms --------------------------------------------------
 chmod 0666 /dev/diag /dev/uio0 2>/dev/null
