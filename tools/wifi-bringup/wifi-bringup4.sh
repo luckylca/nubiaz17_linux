@@ -114,9 +114,23 @@ cp /fwimage/wlan/qca_cld/* /proc/1/root/fwimage/wlan/qca_cld/ 2>/dev/null
 # no sound card). Stage adsp.* and the tas2555 amp firmware into PID1's
 # ramfs /fwimage as well, then kick the adsp-loader.
 cp /fwimage/adsp.b* /fwimage/adsp.mdt /proc/1/root/fwimage/ 2>/dev/null
+cp /fwimage/cpe_9335.b* /fwimage/cpe_9335.mdt /proc/1/root/fwimage/ 2>/dev/null
 cp -n /vendor/firmware/tas2555_uCDSP.bin /fwimage/ 2>/dev/null
 cp -n /fwimage/tas2555_uCDSP.bin /proc/1/root/fwimage/ 2>/dev/null
+# tas2555 driver requests its bin from kworker context at ~1.6s (races this
+# staging -> 60s uevent timeout) and again from the TAS_FWLoad mixer ctl;
+# /lib/firmware in BOTH roots covers every lookup context.
+mkdir -p /lib/firmware /proc/1/root/lib/firmware 2>/dev/null
+cp -n /vendor/firmware/tas2555_uCDSP.bin /lib/firmware/ 2>/dev/null
+cp -n /vendor/firmware/tas2555_uCDSP.bin /proc/1/root/lib/firmware/ 2>/dev/null
 echo 1 > /sys/kernel/boot_adsp/boot 2>/dev/null
+# speaker path + tas2555 per-playback firmware reload (task #22, 2026-09-14:
+# chain = MultiMedia1 -> PRI_MI2S_RX -> tas2555; amp needs FW reloaded with
+# clocks running on EVERY stream start, else it enables without the unmute
+# program and stays silent)
+[ -x /root/audio-setup.sh ] && setsid /root/audio-setup.sh >>/var/log/audio-setup.log 2>&1 &
+[ -x /root/audio-fw-watchdog.sh ] && ! pidof audio-fw-watchdog.sh >/dev/null 2>&1 && \
+	setsid /root/audio-fw-watchdog.sh >/dev/null 2>&1 &
 
 # --- 2. device node perms --------------------------------------------------
 chmod 0666 /dev/diag /dev/uio0 2>/dev/null

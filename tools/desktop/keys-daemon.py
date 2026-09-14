@@ -2,12 +2,14 @@
 # keys-daemon.py — physical key handling for the NX563J Ubuntu desktop.
 #
 #   power key (qpnp_pon, KEY_POWER)      short press = screen off/on
-#   volume up   (gpio-keys, KEY_VOLUMEUP)   brightness +8%
-#   volume down (qpnp_pon, KEY_VOLUMEDOWN)  brightness -8%
+#   volume up   (gpio-keys, KEY_VOLUMEUP)   speaker volume +4dB
+#   volume down (qpnp_pon, KEY_VOLUMEDOWN)  speaker volume -4dB
 #
-# Volume keys adjust BRIGHTNESS for now: the ADSP is still dead (task #22),
-# so there is no sound card and no audio volume to change. Remap to real
-# volume once #22 lands.
+# Volume keys drive 'Playback 0 Volume' (MultiMedia1 FE soft volume, card 0):
+# 0 = 0 dB unity, raw scale 0..8192 centi-dB-ish; step 400 ~= 4 dB.
+# (Before 2026-09-14 they adjusted brightness because the ADSP was dead and
+# there was no sound card; task #22 landed the tas2555 speaker path.)
+# Brightness lives on the panel slider / brightness-slider.py.
 #
 # Screen-off is real power saving: backlight to 0 (lcd-backlight + wled)
 # plus FB_BLANK_POWERDOWN. Wake reverses it in the order proven by
@@ -132,12 +134,24 @@ class Screen:
         log("screen ON")
 
 
-def brightness_step(delta):
-    max_lcd = read("/sys/class/leds/lcd-backlight/max_brightness", 255)
-    pct = round(read(LCD, 128) * 100 / max(1, max_lcd))
-    subprocess.call(["/root/brightness-slider.py", "--set", str(pct + delta)],
+VOL_CTL = "Playback 0 Volume"
+VOL_MAX = 8192
+VOL_STEP = 400  # ~4 dB per key press
+
+
+def volume_step(delta):
+    try:
+        out = subprocess.check_output(
+            ["amixer", "-c0", "cget", "name=%s" % VOL_CTL],
+            stderr=subprocess.DEVNULL).decode()
+        cur = int(out.split(": values=")[1].split(",")[0].split()[0])
+    except (subprocess.CalledProcessError, IndexError, ValueError):
+        cur = 0
+    new = max(0, min(VOL_MAX, cur + delta))
+    subprocess.call(["amixer", "-c0", "-q", "cset", "name=%s" % VOL_CTL,
+                     str(new)],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log("brightness %d%% -> %d%%" % (pct, pct + delta))
+    log("volume %d -> %d" % (cur, new))
 
 
 def main():
@@ -170,9 +184,9 @@ def main():
                 if code == KEY_POWER and value == 1:
                     screen.toggle()
                 elif code == KEY_VOLUMEUP and value in (1, 2):
-                    brightness_step(+8)
+                    volume_step(+VOL_STEP)
                 elif code == KEY_VOLUMEDOWN and value in (1, 2):
-                    brightness_step(-8)
+                    volume_step(-VOL_STEP)
 
 
 if __name__ == "__main__":
