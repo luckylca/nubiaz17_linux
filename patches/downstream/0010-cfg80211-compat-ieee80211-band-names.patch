@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude Code <noreply@anthropic.com>
+Date: Sun, 14 Sep 2026 13:00:00 +0800
+Subject: [PATCH] cfg80211: compat shim for in-tree mac80211 pre-4.7 band names
+
+This tree backported 57fbcce37be7 ("cfg80211: remove IEEE80211_BAND_*")
+into cfg80211 only — the in-tree mac80211 stack and the fullmac drivers
+under drivers/net/wireless (ath, ath9k_htc, rtl8xxxu, ...) still use the
+old IEEE80211_BAND_* enum identifiers, so enabling CONFIG_MAC80211 fails
+to build:
+
+  net/mac80211/tx.c:167:8: error: use of undeclared identifier
+      'IEEE80211_BAND_60GHZ'
+  drivers/net/wireless/ath/regd.c:670:31: error: use of undeclared
+      identifier 'IEEE80211_BAND_2GHZ'
+
+Map the old names onto the new nl80211 ones so the in-tree drivers build
+unmodified. qcacld-3.0 is unaffected (it already keys off
+CFG80211_REMOVE_IEEE80211_BACKPORT).
+---
+ include/net/cfg80211.h | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/include/net/cfg80211.h b/include/net/cfg80211.h
+index 000000000000..000000000000 100644
+--- a/include/net/cfg80211.h
++++ b/include/net/cfg80211.h
+@@ -5966,5 +5966,15 @@
+  * older IEEE80211_BAND_* enums.
+  */
+ #define CFG80211_REMOVE_IEEE80211_BACKPORT 1
++
++/* Compat for the in-tree mac80211 stack and the fullmac drivers under
++ * drivers/net/wireless, which still use the pre-4.7 IEEE80211_BAND_*
++ * identifiers: this tree backported their removal into cfg80211 only.
++ * Map the old names onto the nl80211 ones so those drivers build. */
++#define IEEE80211_BAND_2GHZ	NL80211_BAND_2GHZ
++#define IEEE80211_BAND_5GHZ	NL80211_BAND_5GHZ
++#define IEEE80211_BAND_60GHZ	NL80211_BAND_60GHZ
++#define IEEE80211_NUM_BANDS	NUM_NL80211_BANDS
++#define ieee80211_band		nl80211_band
+
+ #endif /* __NET_CFG80211_H */
+--
+2.39.0
