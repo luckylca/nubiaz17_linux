@@ -1,0 +1,32 @@
+# NetHunter Phase 5 — external USB Wi-Fi adapters (in-tree drivers first).
+#
+# Enables the two classic NetHunter chipsets that this 4.4 tree carries
+# in-tree; both are mac80211 drivers, so MAC80211 comes along (qcacld-3.0
+# is full-mac and does not need it, which is why the defconfig lacks it).
+# Built =y to avoid shipping modules into the rootfs.
+#
+# NOTE: keep CONFIG_* tokens out of comments in this file — the CI merge
+# step greps for them (see downstream-usb-diag.fragment header).
+#
+# Firmware staging reminder for the hardware test (same PID1-namespace trap
+# as tas2555, 2026-09-14): request_firmware runs in the initramfs mount
+# namespace, so the adapter firmware must land in BOTH roots:
+#   htc_7010.fw / htc_9271.fw        (ath9k_htc, linux-firmware, free)
+#   rtlwifi/rtl8188eufw.bin          (RTL8188EU)
+#   rtlwifi/rtl8192cufw.bin          (RTL8192CU)
+# -> /lib/firmware AND /proc/1/root/lib/firmware.
+#
+# 88XXAU (RTL8812AU/8814AU/8821AU) injection-capable drivers are NOT in this
+# tree; they come later as out-of-tree aircrack-ng sources if hardware
+# testing shows the in-tree coverage is not enough.
+
+CONFIG_MAC80211=y
+
+# Atheros AR7010/AR9271 (TP-Link TL-WN722N v1 etc.): the reference
+# monitor+injection USB chipset
+CONFIG_ATH9K_HTC=y
+
+# Realtek in-tree 8xxxu driver; UNTESTED unlocks RTL8192CU/RTL8723AU
+# device IDs beyond the default RTL8188EU/RTL8188RU
+CONFIG_RTL8XXXU=y
+CONFIG_RTL8XXXU_UNTESTED=y
