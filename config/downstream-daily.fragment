@@ -1,0 +1,39 @@
+# NX563J daily-driver combined config fragment — the single fragment fed to
+# build-downstream.yml (which merges exactly ONE fragment per build).
+# Concatenation of, and kept in sync with:
+#   config/downstream-usb-diag.fragment   (gadget serial/ecm for ssh+diag)
+#   config/downstream-bt.fragment         (WCN3990 HCIUART + RFCOMM/BNEP/HIDP)
+#   config/downstream-nethunter-wifi.fragment (external USB Wi-Fi, Phase 5)
+# See those files for the full per-option rationale. Rules carried over:
+# keep CONFIG_* tokens out of comment text; no USB_G_SERIAL/USB_G_NCM
+# (configfs choice conflict); no RNDIS (multi-composite link error).
+
+# --- usb-diag ---------------------------------------------------------------
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_USB_U_SERIAL=y
+CONFIG_USB_U_ETHER=y
+CONFIG_USB_F_SERIAL=y
+CONFIG_USB_F_ACM=y
+CONFIG_USB_F_ECM=y
+CONFIG_USB_CONFIGFS=y
+CONFIG_USB_CONFIGFS_SERIAL=y
+CONFIG_USB_CONFIGFS_ACM=y
+CONFIG_USB_CONFIGFS_ECM=y
+
+# --- bt ---------------------------------------------------------------------
+CONFIG_BT_HCIUART=y
+CONFIG_BT_HCIUART_H4=y
+CONFIG_BT_HCIUART_QCA=y
+CONFIG_BT_RFCOMM=y
+CONFIG_BT_RFCOMM_TTY=y
+CONFIG_BT_BNEP=y
+CONFIG_BT_BNEP_MC_FILTER=y
+CONFIG_BT_BNEP_PROTO_FILTER=y
+CONFIG_BT_HIDP=y
+
+# --- nethunter-wifi (Phase 5) -------------------------------------------------
+CONFIG_MAC80211=y
+CONFIG_ATH9K_HTC=y
+CONFIG_RTL8XXXU=y
+CONFIG_RTL8XXXU_UNTESTED=y
