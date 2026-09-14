@@ -12,7 +12,8 @@ WAITING_FOR_HARDWARE。
 | USB HID 键盘/鼠标/复合 | USB_CONFIGFS_F_HID=y (内建, 4.4.302) | configfs gadget: acm+ecm+ncm+hid.usb0/hid.usb1 | tools/usb-hid/hid-gadget.sh + hid-type.py | 2026-09-14: 键盘主机实收 "NX563J HID TEST"/"kbd ok" 逐字正确; 鼠标 report 实收指针移动; macOS hidutil 确认键盘(usage 6)+鼠标(usage 2)两接口 | **PASS** | Phase 4; 鼠标必须用经典 3 字节无 wheel 描述符 (subclass=0/protocol=0/report_length=3)——4 字节 wheel 版和 boot protocol 在 macOS 枚举正常但指针不动; macOS 指针加速抑制慢速小步, 演示用快速连发 |
 | 外置 USB Wi-Fi (ATH9K_HTC/RTL88XXAU/RTL8188EUS) | config/downstream-nethunter-wifi.fragment 待建 | — | — | 未开始 | WAITING_FOR_HARDWARE | Phase 5, 需要 OTG + 对应网卡 |
 | USB Host/OTG 稳定性 | — | — | — | 未开始 | BLOCKED | Phase 6 |
-| BT RFCOMM/BNEP/raw HCI | — | hci_qca | — | 未开始 | BLOCKED | Phase 7 |
+| BT raw HCI 套接字 | BT_HCIUART_QCA=y (内建) | hci_qca, AF_BLUETOOTH/SOCK_RAW | tools/bt/raw-hci-test.py | 2026-09-14: Read_Local_Version status=0 mfr=29(QCA) + Read_BD_ADDR 00:A0:C6:* 均实收 Command Complete, 不依赖 bluetoothd | **PASS** | Phase 7; 注意本 4.4 内核 HCI_FILTER optname=2 (SOL_HCI=0) |
+| BT RFCOMM/BNEP 数据通道 | BT_RFCOMM/BT_BNEP=y | hci_qca + BlueZ 5.72 | tools/bt/rfcomm-pair-test.sh | 2026-09-14: 设备→Mac ACL/SDP/远程名字全通; 配对卡在 Mac 侧 SSP 用户确认(Mac 对该设备出站寻呼本地失败, blueutil/GUI 均零包到达, 多次实测) | **BLOCKED(主机侧)** | Phase 7; 待 Mac 蓝牙恢复或换 Android 对端复测; 陷阱: stuck inquiry 由 timeout 杀扫描残留, 需 HCI Exit_Inquiry; 半死 ACL handle 无法清除只能重启; hci_uart down/up 必 wedge(超时110)只能重启 |
 | USB BT dongle | — | — | — | 未开始 | WAITING_FOR_HARDWARE | Phase 8 |
 | SocketCAN | — | — | — | 未开始 | WAITING_FOR_HARDWARE | Phase 9 |
 | SDR | — | — | — | 未开始 | WAITING_FOR_HARDWARE | Phase 10 |
