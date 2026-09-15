@@ -9,8 +9,12 @@ Android sparse image format (as produced by AOSP img2simg):
   types:   0xCAC1 raw (data follows), 0xCAC2 fill (4-byte value follows),
            0xCAC3 don't-care (no data), 0xCAC4 crc32
 
-Zero blocks become don't-care chunks; everything else is coalesced into
-raw chunks (capped to keep memory bounded).
+IMPORTANT: zero blocks are emitted as FILL(0) chunks, NOT don't-care.
+2026-09-15 selftest lesson: `fastboot flash userdata` does NOT erase the
+partition first, so don't-care blocks keep the previous (encrypted Android)
+content — files whose extents legitimately contain zeros (e.g. python3.12)
+came back with stale junk and crashed. FILL(0) costs 4 bytes per run and
+is correct on a dirty partition.
 
 Usage: img2simg.py INPUT.raw OUTPUT.sparse
 """
@@ -39,7 +43,7 @@ def main(src_path, dst_path):
             j = i
             while j < total_blks and data[j * BLK:(j + 1) * BLK] == b"\0" * BLK:
                 j += 1
-            runs.append((DONT_CARE, i, j - i, None))
+            runs.append((FILL, i, j - i, 0))
             i = j
         else:
             j = i
@@ -53,8 +57,11 @@ def main(src_path, dst_path):
     with open(dst_path, "wb") as out:
         out.write(struct.pack("<IHHHHIIII", MAGIC, 1, 0, 28, 12,
                               BLK, total_blks, len(runs), 0))
-        for typ, start, nblk, _ in runs:
-            if typ == DONT_CARE:
+        for typ, start, nblk, fill in runs:
+            if typ == FILL:
+                out.write(struct.pack("<HHII", FILL, 0, nblk, 16))
+                out.write(struct.pack("<I", fill))
+            elif typ == DONT_CARE:
                 out.write(struct.pack("<HHII", DONT_CARE, 0, nblk, 12))
             else:
                 payload = data[start * BLK:(start + nblk) * BLK]

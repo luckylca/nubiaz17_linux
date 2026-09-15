@@ -376,3 +376,23 @@ userdata") -> img2simg.py sparse fallback flashed 4.5GB in 107s (7 chunks).
 Restored system booted cleanly: dist-snapshot marker present, BT UP RUNNING,
 speaker path applied, wlan0 up, USB gadget ssh back, resize2fs grew the fs
 to the full 51GB partition (7% used). **flash.sh + package fully verified.**
+
+### Selftest follow-up: sparse don't-care corruption found and fixed
+
+The first flash "worked" (system booted, services up) but python3 segfaulted
+on anything. Root cause chain, all verified:
+`fastboot flash userdata` does NOT erase the partition; my img2simg emitted
+zero regions as DON'T-CARE chunks ("leave disk as-is"); the disk held
+FBE-encrypted Android remnants, so files whose allocated extents contain
+zero padding (python3.12: 730KB zero pad at offset 3670016) came back with
+stale junk. dpkg md5 sweep on the flashed system: 13,506 content failures.
+Package image itself proven pristine (debugfs extract == dpkg md5), encoder
+proven lossless (full 4.6GB round-trip) — the don't-care semantics were the
+bug, not the encoding.
+
+Fix: img2simg.py emits FILL(0) chunks (4 bytes per run) instead of
+don't-care. Reflashed: sweep drops to **2 benign mismatches** (minimized-image
+`man` shim + generated icon cache; the 10,527 "missing" files are man pages
+stripped by Ubuntu Base minimization — pre-existing). python3.12 md5 matches
+dpkg before AND after resize2fs (resize exonerated). The package in
+work/dist/nx563j-ubuntu-20260915 is now fully verified end-to-end.
