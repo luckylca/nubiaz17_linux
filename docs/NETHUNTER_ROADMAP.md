@@ -55,3 +55,24 @@
 - offmode charging 根因假说 + 验证路径成型（RESEARCH.md 2026-09-15）：
   PON_USB_CHG/CBLPWR_N 触发源默认使能，掉电瞬间线缆仍在 → PMIC 立刻
   重新上电。验证看重启后 dmesg 的 "Power-on reason"。
+
+## 2026-09-16 备注
+
+- **ch36 (5GHz) 注入稳定性对照**：注入 200/200 帧后设备全程无 FW assert
+  （对照 2026-09-15 2.4GHz ch6 注入后 ~31s FW 自炸 ratectrl_11ac_）。
+  进一步支持「2.4GHz helper STA vdev 触发 11ac 速率控制 assert」假说。
+  5GHz 注入视为安全；2.4GHz 注入在对照实验前仍列为高危。
+- **本次 helper vdev 150s 未自动销毁**（restore-mission.sh 正确拒绝回切，
+  规则起效）。恢复路径 = 直接 sysrq 重启，重启后 con_mode=0 / wlan1
+  managed，功能正常。待查：之前（9-12 inject6）vdev 是由什么路径销毁的，
+  为何这次没有。
+- **Mac 端嗅探器失守**：macOS 15.7.7 上 `airport en0 sniff` 已彻底失效
+  （打印 deprecation 警告后直接退出，不生成 /tmp/airportSniff*.cap，
+  两次复现）；Apple tcpdump 148 无 -I 监视模式标志。RF 旁证需要新方案：
+  Wireless Diagnostics.app GUI Sniffer（可选信道，cap 落 /var/tmp）或
+  第三方工具。Phase 2 状态不变：host-side 注入 PASS，RF 旁证
+  BLOCKED_ON_SNIFFER（非手机端问题）。
+- usb1 对地址已从 10.42.0.x 迁到 **10.42.1.x**（修 usb0/usb1 同在
+  10.42.0.0/24 导致设备把 10.42.0.33 从 usb0 ARP 出去的路由歧义）：
+  设备 usb1=10.42.1.2/24 ↔ Mac en161=10.42.1.33/24，代理恢复监听
+  10.42.1.33:8080。注意 gadget 每次重绑 enNN 编号都会变。
