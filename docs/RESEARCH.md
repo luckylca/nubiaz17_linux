@@ -1235,13 +1235,22 @@ inject-test.sh 在 daily2（419b4ba7…）上注入正常（20/20，helper vdev
 subsystem-restart 级联（modem 重启、MSS halt timeout）后 USB gadget 死亡，
 整机失联，需硬复位（本次 boot dmesg: Power-on reason = Hard Reset）。
 
-**定性：不是 daily2 内核回归**。9-12 在 inject6 上的干净回切都发生在
-注入后 60s 且 dmesg 先出现 `mon-inject: helper vdev 4 destroyed`
-（cleanup 完成）；本次回切请求抢在 cleanup worker 之前，ratectrl 在
-helper vdev 拆除竞态里 assert。v6 修复只覆盖「cleanup 完成后切换」。
+**时间线复盘（当晚对照 live dmesg 修正）**：所有回切写尝试的 EIO 都发生
+在 FW assert **之后**；日志窗内没有任何 con_mode handler 被调用的痕迹
+（连第一行 hdd_info 都没有）——回切写根本没进 handler，不是 handler
+半途失败。即：FW 在注入后 ~31s 自行 assert，之后写 con_mode 自然全部
+EIO（WMI 已死）。
+
+**工作假说：2.4GHz 是触发条件**。assert 在 ratectrl_11ac（11ac 速率
+控制），而 11ac 是 5GHz 技术；9-12 全部成功循环都在 5GHz（5745/5180MHz，
+helper vdev 活 60s 无恙），本次是首次在 2.4GHz（ch6/2437MHz）注入。
+helper STA vdev 落在 2.4GHz 信道时，FW 的 11ac 速率控制路径可能存在
+非法状态 → assert。待证伪/证实的对照实验（明天做）：ch36 注入后静置
+60s+ 不动 con_mode，看 FW 是否存活（5GHz 应活）；再择机在可牺牲窗口
+重复 ch6 静置实验（若 60s 内自爆则假说实锤，且证明与回切无关）。
 
 **操作规则（硬性的）**：注入后必须等 `helper vdev .* destroyed` 出现在
 dmesg，再等 5s，才允许写 con_mode=0；cleanup 超 150s 未完成就只重启。
 已固化为 tools/wifi-mon/restore-mission.sh（等待-确认-再切换）。
-内核侧加固（切模式时对未完成的 cleanup 返回 EBUSY 而非竞态拆除）留作
-后续补丁。
+2.4GHz 注入在假说澄清前视为高风险操作。RF 证明改用 ch36。
+内核侧加固（切模式时对未完成的 cleanup 返回 EBUSY）仍留作后续补丁。
