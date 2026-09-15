@@ -33,8 +33,11 @@ echo "[1/7] device reachable?"
 $SSH "echo ok: \$(uname -r)" || { echo "device unreachable" >&2; exit 1; }
 
 echo "[2/7] verify running boot partition == $(basename "$BOOTIMG")"
-IMG_SIZE=$(stat -f%z "$BOOTIMG")
-IMG_SHA=$(shasum -a 256 "$BOOTIMG" | awk '{print $1}')
+IMG_SIZE=$(stat -f%z "$BOOTIMG" 2>/dev/null || stat -c%s "$BOOTIMG")
+# Partition-truncated hash convention (RESEARCH.md): the tail <512 bytes of
+# the signed image can differ from partition residue, so both sides hash
+# only the first floor(size/512)*512 bytes.
+IMG_SHA=$(dd if="$BOOTIMG" bs=512 count=$((IMG_SIZE/512)) 2>/dev/null | shasum -a 256 | awk '{print $1}')
 DEV_SHA=$($SSH "dd if=/dev/block/bootdevice/by-name/boot bs=512 count=$((IMG_SIZE/512)) 2>/dev/null | sha256sum" | awk '{print $1}')
 echo "    img $IMG_SHA"
 echo "    dev $DEV_SHA"
@@ -83,7 +86,8 @@ echo "[6/7] manifest"
   echo "nx563j-ubuntu-$VER"
   echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "device uname: $($SSH 'uname -a')"
-  echo "boot.img sha256: $IMG_SHA  (= running boot partition)"
+  echo "boot.img sha256 (full): $(shasum -a 256 "$BOOTIMG" | awk '{print $1}')"
+  echo "boot.img sha256 (512-trunc, = running partition): $IMG_SHA"
   echo "userdata.img.gz sha256: $(shasum -a 256 "$DEST/userdata.img.gz" | awk '{print $1}')"
   echo "userdata used: ${USED_MB}MB, image: ${IMG_MB}MB"
   echo "packaging commit: $(git -C "$ROOT" rev-parse HEAD)"

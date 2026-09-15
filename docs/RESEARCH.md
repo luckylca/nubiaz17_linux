@@ -1222,12 +1222,26 @@ value[0]——路由本身是单 bit，value[1] 是未初始化的显示伪影�
 on,off 即正常态，不影响声音。NX563J 单 tas2555 单声道，不存在
 「右声道丢失」问题。audio-setup.sh 的 set_route 校验无误。
 
-## 2026-09-15: daily2 内核 con_mode 4→0 回切疑似回归
+## 2026-09-15: con_mode 4→0 过早回切 → 固件 assert（非 daily2 回归）
 
-inject-test.sh 在 daily2（419b4ba7…，补丁 0009-0012 全量）上注入
-本身正常（20/20 收帧，helper vdev 2437MHz 建立/提交日志齐全）。
-但注入后 echo 0 > con_mode 连 6+ 次失败（EIO），随后整机失联
-（USB gadget 双接口消失，疑似 hang 或崩溃重启）。
-2026-09-12 的「运行时回切稳定」结论是在 inject6 内核上验的；
-daily2 新增的 mac80211/ath9k 内建或 config 变化可能影响回切路径。
-待设备恢复后读 /root/inject-dmesg-live.txt post-mortem 定性。
+inject-test.sh 在 daily2（419b4ba7…）上注入正常（20/20，helper vdev
+2437MHz 建立/提交日志齐全）。注入结束后约 30s 手写 con_mode=0，连 6+
+次 EIO，随后 WLAN 固件 assert：
+
+    modem subsystem failure reason: err_qdi.c:450:EF:wlan_process:1:
+    cmnos_thread.c:3242:Asserted in ratectrl_11ac_.
+    icnss: PD service down ... cause: Root PD crashed
+
+subsystem-restart 级联（modem 重启、MSS halt timeout）后 USB gadget 死亡，
+整机失联，需硬复位（本次 boot dmesg: Power-on reason = Hard Reset）。
+
+**定性：不是 daily2 内核回归**。9-12 在 inject6 上的干净回切都发生在
+注入后 60s 且 dmesg 先出现 `mon-inject: helper vdev 4 destroyed`
+（cleanup 完成）；本次回切请求抢在 cleanup worker 之前，ratectrl 在
+helper vdev 拆除竞态里 assert。v6 修复只覆盖「cleanup 完成后切换」。
+
+**操作规则（硬性的）**：注入后必须等 `helper vdev .* destroyed` 出现在
+dmesg，再等 5s，才允许写 con_mode=0；cleanup 超 150s 未完成就只重启。
+已固化为 tools/wifi-mon/restore-mission.sh（等待-确认-再切换）。
+内核侧加固（切模式时对未完成的 cleanup 返回 EBUSY 而非竞态拆除）留作
+后续补丁。
