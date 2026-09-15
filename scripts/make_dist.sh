@@ -50,10 +50,27 @@ mkdir -p "$DEST"
 cp "$BOOTIMG" "$DEST/boot.img"
 
 echo "[3/7] build userdata ext4 image on device"
-USED_MB=$($SSH "df -m /dev/sda10 | awk 'NR==2{print \$3}'")
-IMG_MB=$(( USED_MB * 4 / 3 + 512 ))
-echo "    userdata used ${USED_MB}MB -> image ${IMG_MB}MB (sparse)"
+# userdata root = Alpine base + /ubuntu + /boot-target + ~20GB legacy
+# Android /data junk (app/data/media/dalvik-cache/...). Package only what
+# the boot chain needs — include list, not exclude list.
+# Runtime-regenerated caches (fwimage, /system+apex bind targets for bionic
+# libs off sda9, var/log, tmp, caches) ship EMPTY — wifi-bringup4.sh
+# re-creates/re-populates them (mkdir -p + mount from sde10/sda9).
+INCLUDES="boot-target ubuntu bin etc home lib local media mnt opt root run \
+sbin srv tmp usr var dev proc sys bt_firmware sdcard"
+EXCLUDES="ubuntu/system/* ubuntu/apex/* ubuntu/fwimage/* ubuntu/vendor/* \
+ubuntu/tmp/* ubuntu/run/* ubuntu/var/log/* ubuntu/var/cache/* \
+ubuntu/root/.cache/* ubuntu/root/dist-build/* var/log/* tmp/* run/* media/*"
+read -r -a INC_ARR <<< "$INCLUDES"
+EXC_ARGS=(); for e in $EXCLUDES; do EXC_ARGS+=(--exclude="$e"); done
+# size the exact tar stream first (one pass), then image = stream*1.25+512MB
+STREAM_MB=$($SSH "tar -C $DEV_SRC --numeric-owner --one-file-system \
+  ${EXC_ARGS[*]} --warning=no-file-changed -cf - $INCLUDES 2>/dev/null | wc -c")
+STREAM_MB=$(( STREAM_MB / 1048576 + 1 ))
+IMG_MB=$(( STREAM_MB * 5 / 4 + 512 ))
+echo "    payload ${STREAM_MB}MB -> image ${IMG_MB}MB (sparse)"
 $SSH "set -e
+  umount /mnt/dist-img 2>/dev/null || true
   rm -rf $DEV_BUILD && mkdir -p $DEV_BUILD
   dd if=/dev/zero of=$DEV_BUILD/userdata.img bs=1M count=0 seek=$IMG_MB
   mkfs.ext4 -F -m 0 -L userdata $DEV_BUILD/userdata.img >/dev/null
@@ -61,14 +78,13 @@ $SSH "set -e
   mount -o loop $DEV_BUILD/userdata.img /mnt/dist-img
   date > /mnt/dist-img/dist-snapshot; echo 'nx563j-ubuntu-$VER' >> /mnt/dist-img/dist-snapshot
   tar -C $DEV_SRC --numeric-owner --one-file-system \
-      --exclude=./lost+found \
-      --exclude=./ubuntu/root/dist-build \
-      --exclude=./ubuntu/tmp \
-      --exclude=./ubuntu/run \
-      --exclude=./ubuntu/var/cache/apt/archives \
-      --exclude=./ubuntu/root/.cache \
-      -cf - . | tar -C /mnt/dist-img --numeric-owner -xf -
-  mkdir -p /mnt/dist-img/ubuntu/tmp /mnt/dist-img/ubuntu/run
+      ${EXC_ARGS[*]} --warning=no-file-changed \
+      -cf - $INCLUDES | tar -C /mnt/dist-img --numeric-owner -xf -
+  mkdir -p /mnt/dist-img/ubuntu/system /mnt/dist-img/ubuntu/apex/com.android.runtime \
+           /mnt/dist-img/ubuntu/fwimage /mnt/dist-img/ubuntu/vendor \
+           /mnt/dist-img/ubuntu/tmp /mnt/dist-img/ubuntu/run \
+           /mnt/dist-img/ubuntu/var/log /mnt/dist-img/ubuntu/var/cache \
+           /mnt/dist-img/var/log /mnt/dist-img/tmp /mnt/dist-img/run
   sync; umount /mnt/dist-img
   echo IMAGE_BUILT"
 
@@ -89,7 +105,9 @@ echo "[6/7] manifest"
   echo "boot.img sha256 (full): $(shasum -a 256 "$BOOTIMG" | awk '{print $1}')"
   echo "boot.img sha256 (512-trunc, = running partition): $IMG_SHA"
   echo "userdata.img.gz sha256: $(shasum -a 256 "$DEST/userdata.img.gz" | awk '{print $1}')"
-  echo "userdata used: ${USED_MB}MB, image: ${IMG_MB}MB"
+  echo "userdata payload: ${STREAM_MB}MB (of ~30GB used; legacy Android /data excluded), image: ${IMG_MB}MB"
+  echo "excluded by design: Android /data legacy (app,data,media,dalvik-cache,...),"
+  echo "  /ubuntu/system+apex+fwimage (runtime re-staged from sda9/sde10), logs, caches"
   echo "packaging commit: $(git -C "$ROOT" rev-parse HEAD)"
 } > "$DEST/MANIFEST.txt"
 $SSH "chroot /proc/1/root/mnt/rootfs/ubuntu dpkg -l 2>/dev/null || dpkg -l" \

@@ -359,3 +359,20 @@ While the device awaited a power-cycle, audited the bridge kernel's config
   shipping in the initramfs (or flip to =y) before touch can work there
 Next bridge step when the device is free: boot it with an initramfs that
 loads rmi4 + msm drm and check for a DRM card/fb0 + evdev touch node.
+
+## 2026-09-15 Stable-system dist package + end-to-end selftest PASS
+
+`scripts/make_dist.sh [VER]` snapshots the live system into
+`work/dist/nx563j-ubuntu-<VER>/`: signed boot.img (hash-verified against the
+running boot partition, 512-truncated convention) + userdata.img.gz (ext4
+image built on-device, include-list: Alpine base + /ubuntu + /boot-target;
+legacy Android /data ~20GB, /ubuntu/system+apex+fwimage runtime caches,
+logs and caches excluded by design) + flash.sh + img2simg.py + MANIFEST.
+
+Selftest 2026-09-15 (user authorized wiping the legacy Android data):
+`flash.sh` detected fastboot (392a99df), nubia_unlock gate OK, boot flashed,
+raw userdata flash REJECTED by the bootloader ("Failed reading from
+userdata") -> img2simg.py sparse fallback flashed 4.5GB in 107s (7 chunks).
+Restored system booted cleanly: dist-snapshot marker present, BT UP RUNNING,
+speaker path applied, wlan0 up, USB gadget ssh back, resize2fs grew the fs
+to the full 51GB partition (7% used). **flash.sh + package fully verified.**
