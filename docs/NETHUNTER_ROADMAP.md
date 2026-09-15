@@ -10,7 +10,7 @@
 | Phase | 内容 | 状态 | 证据/备注 |
 |-------|------|------|-----------|
 | 1 | 工程恢复、基线内核 CI | ✅ 完成 | build-downstream.yml, 内核 cda6a278 |
-| 2 | WCN3990 帧注入 (TX) | 🟡 主机侧链路全通，待双机验证 | patches/downstream/0009; 缺第二嗅探器 |
+| 2 | WCN3990 帧注入 (TX) | 🟡 主机侧链路全通(含 daily2 内核回归 2026-09-15: 20/20)，待 RF 证明 | patches/downstream/0009; RF 证明方案就绪: Mac en0 作第二嗅探器 (/tmp/rf-proof.sh, 需一次 sudo); 注意 daily2 上 con_mode 4→0 回切疑似回归致整机 wedge (RESEARCH.md 2026-09-15) |
 | 3 | monitor→mission 恢复 | ✅ PASS | 2026-09-12 两轮完整循环零 assert |
 | 4 | USB HID 键盘/鼠标/复合 | ✅ PASS | 2026-09-14 主机实收文本+指针移动; tools/usb-hid/ |
 | 5 | 外置 USB Wi-Fi (ath9k_htc/rtl8xxxu) | 🟡 内核构建中 | fragment 就绪; 补丁 0010-0012 修 in-tree 驱动编译; 实测 WAITING_FOR_HARDWARE (OTG+网卡) |
@@ -41,3 +41,17 @@
   0x02 No Connection，GUI 配对一直转圈，btmon 证实零包到达。
   设备→Mac 方向完全正常（ACL/SDP/远程名字都通）。判 Mac 蓝牙栈损坏，
   需重启 Mac 恢复。
+
+## 2026-09-15 备注
+
+- luckyy_5G 已不存在（用户换住处），wpa 配置已清除；之前「扫不到」
+  非驱动问题。
+- USB gadget 第一对（usb0↔en155, 10.42.0.1↔.32）设备→Mac 方向单通
+  （ARP FAILED）；第二对（usb1↔en156, .2↔.33）双向正常。设备发起的
+  连接（NFS/apt 代理）一律走 10.42.0.33。
+- NFS Phase 12 真机 PASS（详见 CAPABILITIES 矩阵）。
+- mixer 'PRI_MI2S_RX Audio Mixer MultiMedia1' 永远 on,off 是内核 get
+  handler 只填 value[0] 的显示伪影，非 bug（RESEARCH.md 2026-09-15）。
+- offmode charging 根因假说 + 验证路径成型（RESEARCH.md 2026-09-15）：
+  PON_USB_CHG/CBLPWR_N 触发源默认使能，掉电瞬间线缆仍在 → PMIC 立刻
+  重新上电。验证看重启后 dmesg 的 "Power-on reason"。
