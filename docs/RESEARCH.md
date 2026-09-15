@@ -1181,3 +1181,53 @@ wpa_supplicant/dhclient"。inject-test.sh 尾部提示已同步更新。
   改 rootfs 文件**。串口是除 ssh 外的第二管理通道，务必保留。
 - 镜像哈希校验惯例：dd bs=512 count=floor(size/512)，不能用 ceil（分区
   尾部有上次刷入的残留字节，多读 1 块必然 mismatch）。
+
+## 2026-09-15: offmode charging（插电关机变重启）根因研究
+
+**现象**（任务 #24）：USB 插线状态下执行关机，PMIC 掉电后立刻重新上电，
+整机冷启动，看起来像「关机变重启」。
+
+**源码链路**（kernel cda6a278+0010-0012 均适用）：
+- `kernel_power_off` → `do_msm_poweroff`（drivers/power/reset/msm-poweroff.c）
+  → `qpnp_pon_system_pwr_off(PON_POWER_OFF_SHUTDOWN)` 配置
+  PS_HOLD_RST_CTL = shutdown(0x4) → `deassert_ps_hold()` 拉低 PS_HOLD
+  → PMIC 进入关机态。
+- **根因假说**：PMIC PON 触发源寄存器 QPNP_PON_TRIGGER_EN (base+0x80)
+  里 PON_USB_CHG(bit4)/PON_CBLPWR_N(bit6) 默认使能（enum
+  pon_trigger_source，include/linux/input/qpnp-power-on.h）。掉电瞬间
+  线缆仍在 → PON 立刻判定「USB/线缆插入」→ 重新上电 → 冷启动。
+  与库存 Android 的区别：库存走 androidboot.mode=charge 进充电动画，
+  我们的 boot 链路没有 charge 模式，直接进 Ubuntu。
+
+**验证路径**（零硬件改动）：qpnp-power-on.c probe 会打印
+`PMIC@SID0 Power-on reason: XXX and 'cold/warm' boot`（dmesg 可见）。
+插电关机→自动重启后看该行：若 reason 是 USB charger / cable power，
+假说实锤；同时 'cold' boot 字样可区分于 warm reset。
+
+**修复候选**（待验证后再动手）：
+1. do_msm_poweroff 里 deassert_ps_hold 之前
+   `qpnp_pon_trigger_config(PON_USB_CHG,false)` +
+   `qpnp_pon_trigger_config(PON_CBLPWR_N,false)`。
+   副作用：关机后插线不再自动开机（电源键仍可用）——对 mini-server
+   场景「掉电自恢复」是个 tradeoff，建议做成模块参数/运行时开关。
+2. 或用户态关机前通过 debugfs/sysfs 写触发寄存器（需确认 PON 寄存器
+   在关机流程后是否保持——PON 在常供电域，大概率保持）。
+
+## 2026-09-15: mixer 'on,off' 读数之谜（非 bug）
+
+'PRI_MI2S_RX Audio Mixer MultiMedia1' 永远读 values=on,off，写 1,1
+无效。源码实锤：msm-pcm-routing-v2.c 中该控制是 SOC_DOUBLE_EXT 双值
+声明，但 msm_routing_get_audio_mixer 只填 value[0]、put 只读
+value[0]——路由本身是单 bit，value[1] 是未初始化的显示伪影。
+on,off 即正常态，不影响声音。NX563J 单 tas2555 单声道，不存在
+「右声道丢失」问题。audio-setup.sh 的 set_route 校验无误。
+
+## 2026-09-15: daily2 内核 con_mode 4→0 回切疑似回归
+
+inject-test.sh 在 daily2（419b4ba7…，补丁 0009-0012 全量）上注入
+本身正常（20/20 收帧，helper vdev 2437MHz 建立/提交日志齐全）。
+但注入后 echo 0 > con_mode 连 6+ 次失败（EIO），随后整机失联
+（USB gadget 双接口消失，疑似 hang 或崩溃重启）。
+2026-09-12 的「运行时回切稳定」结论是在 inject6 内核上验的；
+daily2 新增的 mac80211/ath9k 内建或 config 变化可能影响回切路径。
+待设备恢复后读 /root/inject-dmesg-live.txt post-mortem 定性。
