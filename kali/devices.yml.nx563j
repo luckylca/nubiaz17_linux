@@ -1,0 +1,32 @@
+# devices.yml entry for Nubia Z17 (nx563j) — to be merged into
+# kali-nethunter-devices/devices.yml (submission via GitLab MR, see
+# docs/KALI_NETHUNTER_PORT.md phase K6).
+#
+# features policy: only capabilities verified on real hardware are listed.
+# HID + internal Injection verified on the identical kernel code base
+# (Ubuntu-phase reference platform, same lineage-22.2 tree + these patches);
+# re-verified on Android/NetHunter before the MR. BT_RFCOMM intentionally
+# omitted until the blocked host-side retest passes. External-adapter labels
+# (RTL88XXAU etc.) omitted until OTG hardware arrives.
+
+- nx563j:
+    model  : Nubia Z17
+    images :
+      - id     : nx563j-los
+        name   : Nubia Z17 (LineageOS 22.2)
+        android: fifteen
+    kernels:
+      - id          : nx563j-los
+        description : Nubia Z17 for LineageOS
+        kernelstring: NetHunter Kernel for Nubia Z17
+        arch        : arm64
+        devicenames : nx563j,NX563J
+        block       : /dev/block/bootdevice/by-name/boot
+        slot_device : 0
+        versions    :
+          - android    : fifteen
+            linux      : 4.04
+            description: LineageOS 22.2
+            author     : luckylca
+            source     : 'git clone https://github.com/luckylca/android_kernel_nubia_msm8998_nethunter -b nethunter-22.2'
+            features   : [HID, Injection, Internal_BT]
