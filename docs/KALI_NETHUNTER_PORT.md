@@ -106,8 +106,8 @@ nethunter/build-scripts/kali-nethunter-devices，本地克隆 /tmp/knd）。
 
 刷机序列（recovery 菜单选定后全部由我远程执行）：
 1. adb -d sideload work/lineageos/lineage-22.2-20260911-nightly-nx563j-signed.zip
-2. adb -d sideload work/lineageos/Magisk.apk（Magisk zip 直刷）
-3. adb -d sideload artifacts/kali/nethunter-…-kalifs_full.zip
+2. ~~recovery 刷 Magisk~~ 已弃用（v26+ 不再支持 recovery 安装，实测报 "unable to unpack boot image"）→ 改为进系统后 Magisk app 直接安装
+3. ~~recovery sideload NetHunter~~ 该包是 Magisk 模块（updater-script 以 #MAGISK 开头），recovery 会拒绝 → 进系统后 adb push + su -c magisk --install-module
 4. Reboot system now（用户点）→ 首次开机 ~15 分钟
 - 刷官方 LineageOS 22.2 nightly（download.lineageos.org/devices/nx563j）
   —— **会替换 Ubuntu 系统**；回退路径 = 现成的一键刷机包
