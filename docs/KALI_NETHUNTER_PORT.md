@@ -74,11 +74,41 @@ nethunter/build-scripts/kali-nethunter-devices，本地克隆 /tmp/knd）。
   → /dev/sde18（非 A/B 槽位设备，slot_device: 0）
 - Image.gz-dtb 用 K2 CI 产物；提交官方需 GitLab 账号 + MR（待用户确认）
 
-### K4. 安装器 zip 构建
-- 克隆 kali-nethunter-installer，bootstrap.sh 拉 devices 仓库（指到我们的
-  fork/本地），build.py 出 Magisk 风格 NetHunter zip
+### K4. 安装器 zip 构建 ✅ 2026-09-16
+- 用官方 kali-nethunter-installer build.py（用户已批准运行）+ 我们的
+  devices 条目构建成功：
+  - 内核包 `kernel-nethunter-20260916_115945-nx563j-los-fifteen.zip`
+    (31MB, sha256 687eac5f…)
+  - 完整包 `nethunter-20260916_121646-nx563j-los-fifteen-kalifs_full.zip`
+    (2.02GB, sha256 f1708e66…)，含 kali-nethunter-rootfs-full-arm64
+    (sha256 fd108959…与官方 SHA256SUMS 一致)
+  - 均存 artifacts/kali/
+- 坑：kali.download 的 https 在此网络下大文件会 SSL EOF，但 **http/80
+  完全正常**——手动下 rootfs 放 data/rootfs/kalifs-full-arm64.tar.xz
+  后 build.py 自动跳过下载。Mac 无 pyyaml/requests：python3 -m venv。
+- build.py 读 `kernels/devices.yml`（软链到我们改过的 devices 树即可）。
 
-### K5. 真机验证（需要用户在场的节点会明确标注）
+### K5. 真机验证（进行中，2026-09-16 开始）
+已完成：
+- 下载官方 LineageOS 22.2 nightly 20260911（sha256 47d22d3f…✓）+
+  recovery.img（67b51eb1…✓），存 work/lineageos/
+- fastboot 刷入 LOS recovery（pre-authorized，免确认）
+- `fastboot boot` 此 bootloader 不支持（unknown command）→ 用新做的
+  /root/reboot-recovery（reboot 系统调用带 "recovery" 字符串，同
+  reboot-bl 机制）无按键进 recovery，成功
+- LOS recovery 里 adb 显示 unauthorized 是**正常状态**——选 "Apply
+  update → Apply from ADB" 后变 sideload 才能传包；recovery 菜单必须
+  屏幕操作
+当前阻塞：等用户在场操作 recovery 菜单（Factory Reset → Format data
+→ Apply from ADB），然后我远程 adb sideload ROM → Magisk → NetHunter。
+**注意：此刻手机上 Ubuntu 完好无损**（只刷了 recovery 分区，不影响
+正常启动）。
+
+刷机序列（recovery 菜单选定后全部由我远程执行）：
+1. adb -d sideload work/lineageos/lineage-22.2-20260911-nightly-nx563j-signed.zip
+2. adb -d sideload work/lineageos/Magisk.apk（Magisk zip 直刷）
+3. adb -d sideload artifacts/kali/nethunter-…-kalifs_full.zip
+4. Reboot system now（用户点）→ 首次开机 ~15 分钟
 - 刷官方 LineageOS 22.2 nightly（download.lineageos.org/devices/nx563j）
   —— **会替换 Ubuntu 系统**；回退路径 = 现成的一键刷机包
   （work/dist/nx563j-ubuntu-20260915，自测 PASS）
