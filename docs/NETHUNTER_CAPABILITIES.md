@@ -16,7 +16,8 @@ nethunter full 包（sha256 f1708e66…，kalifs sha256 fd108959…与官方一�
 | Kali chroot 运行 | 2026-09-17: `busybox chroot … bash` 内 uname=kali 4.4.302-perf+（我们的内核），Kali 2026.2，1794 包，msfconsole/aircrack-ng/wifite/bettercap/reaver 均在 | **PASS** | bootkali 由 NetHunter app 首启生成；模块 busybox 符号链坑已修（见 PORT 文档） |
 | Wi-Fi 注入（5GHz） | 2026-09-17: svc wifi disable → con_mode 4 → chroot python3 inject.py wlan0 20 帧 → sent 20/20，dmesg `mon-inject: helper vdev 4 … on 5180 MHz`，无 FW assert，helper 销毁后 con_mode→0，Wi-Fi 恢复 | **PASS(host-side)** | 与 Ubuntu 侧同补丁同路径；射频证据仍待第二嗅探器；2.4GHz 勿用 |
 | 蓝牙适配器 | 2026-09-17: svc bluetooth enable → state ON（"Nubia Z17"） | **PASS(点亮)** | raw HCI 深度验证见 Ubuntu 侧记录 |
-| HID gadget | 内核 CONFIG_USB_CONFIGFS_F_HID=y 已随当前内核运行 | 🟡 kernel-side | USB Arsenal 实测会断 adb 会话，待屏幕侧操作验证 |
+| HID gadget | 2026-09-17: configfs hid.usb0（键盘 boot 描述符）绑定 a800000.dwc3，**Mac 端实见** "HID Keyboard" VID 0x1d6b PID 0x0104 Manufacturer NetHunter，手机端 `config #1: c` configured | **PASS(枚举级)** | 按键级主机实收已有同驱动同描述符证据（Phase 4）；LOS 下须先 `setprop sys.usb.config none` 否则 UsbDeviceManager 秒抢回 UDC；/dev/hidg0 节点被 SELinux 拦 kdevtmpfs，由 NH app/mknod 处理 |
+| Wi-Fi STA 日常上网（回归） | 2026-09-17: 自研内核下连接 Mac 共享热点，192.168.2.6/24，signal -33dBm，tx 866.7Mbit/s VHT-MCS9 80MHz 2SS，网关 ping 0% 丢包，generate_204=204 | **PASS** | 换内核不影响日用 Wi-Fi——MR 关键回归项 |
 | Magisk root | `su -c id` → uid=0（magisk 域） | **PASS** | 授权弹窗默认 10s 超时，需在 Superuser 页手动允许 |
 
 ## Linux 用户态平台（Ubuntu，K5 前的历史验证）

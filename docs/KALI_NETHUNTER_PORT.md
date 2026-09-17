@@ -114,8 +114,9 @@ full chroot 全部真机运行。** 全部证据如下。
 | chroot | ✅ | Kali 2026.2 Rolling, 1794 包；msfconsole/aircrack-ng/wifite/bettercap/reaver 在 |
 | NetHunter app 套件 | ✅ | com.offsec.nethunter + nhterm + kex + store ×2 已装，bootkali 由 app 首启生成 |
 | Wi-Fi 注入（5GHz ch36） | ✅ host-side | con_mode 0→4，python3(chroot) 发 20/20 probe-req，dmesg `mon-inject: helper vdev 4 ... on 5180 MHz`/`first frame submitted`，无 FW assert；恢复等 helper vdev destroyed 后 con_mode→0，Wi-Fi 服务回启用，全周期干净 |
-| HID | kernel ✅ / app 待测 | CONFIG_USB_CONFIGFS_F_HID=y 在内核；USB Arsenal 实测会断 adb 会话，待后续 |
+| HID | ✅ 枚举级 | configfs hid.usb0 绑定后 Mac 实见 "HID Keyboard" 0x1d6b:0x0104；须先 setprop sys.usb.config none 防 UsbDeviceManager 抢回 UDC（2026-09-17） |
 | 蓝牙 | ✅ | svc bluetooth enable → adapter ON（"Nubia Z17"） |
+| Wi-Fi STA 回归 | ✅ | 自研内核下日常上网正常：-33dBm / 866.7Mbit/s / generate_204 通过（2026-09-17） |
 
 #### 踩坑实录（重要教训）
 - **固件门假设被推翻**：首刷 LOS 失败时怀疑 `nubia.verify_modem
