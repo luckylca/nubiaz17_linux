@@ -4,6 +4,23 @@
 构件 SHA256 / 测试命令 / 结果 / 根因。未验证的一律标 BLOCKED 或
 WAITING_FOR_HARDWARE。
 
+## Android 平台（LineageOS 22.2 + Magisk + Kali chroot，2026-09-17 装机）
+
+LOS 22.2-20260911-NIGHTLY-nx563j + 自研 NetHunter 内核（CI 构建，源 commit
+a5fee84d，Image.gz-dtb sha256 2038303d…）+ Magisk 30.7 + 官方安装器产出的
+nethunter full 包（sha256 f1708e66…，kalifs sha256 fd108959…与官方一致）。
+详见 docs/KALI_NETHUNTER_PORT.md K5 节。
+
+| 能力 | 实测 | 结果 | 备注 |
+|------|------|------|------|
+| Kali chroot 运行 | 2026-09-17: `busybox chroot … bash` 内 uname=kali 4.4.302-perf+（我们的内核），Kali 2026.2，1794 包，msfconsole/aircrack-ng/wifite/bettercap/reaver 均在 | **PASS** | bootkali 由 NetHunter app 首启生成；模块 busybox 符号链坑已修（见 PORT 文档） |
+| Wi-Fi 注入（5GHz） | 2026-09-17: svc wifi disable → con_mode 4 → chroot python3 inject.py wlan0 20 帧 → sent 20/20，dmesg `mon-inject: helper vdev 4 … on 5180 MHz`，无 FW assert，helper 销毁后 con_mode→0，Wi-Fi 恢复 | **PASS(host-side)** | 与 Ubuntu 侧同补丁同路径；射频证据仍待第二嗅探器；2.4GHz 勿用 |
+| 蓝牙适配器 | 2026-09-17: svc bluetooth enable → state ON（"Nubia Z17"） | **PASS(点亮)** | raw HCI 深度验证见 Ubuntu 侧记录 |
+| HID gadget | 内核 CONFIG_USB_CONFIGFS_F_HID=y 已随当前内核运行 | 🟡 kernel-side | USB Arsenal 实测会断 adb 会话，待屏幕侧操作验证 |
+| Magisk root | `su -c id` → uid=0（magisk 域） | **PASS** | 授权弹窗默认 10s 超时，需在 Superuser 页手动允许 |
+
+## Linux 用户态平台（Ubuntu，K5 前的历史验证）
+
 | 能力 | 内核配置 | 驱动/机制 | 用户态 | 实测 | 结果 | 备注 |
 |------|----------|-----------|--------|------|------|------|
 | Wi-Fi 监听模式 (RX) | 内建 qcacld-3.0 v5.1.1.77V | con_mode=4 全局监听, wlan_mon_drv_ops | tools/wifi-mon/moncap.py (AF_PACKET) | 2026-09-10: 15s 318 帧, 317 合法 radiotap, beacon/probe/data/deauth, 2.4G/5G 信道可切 | **PASS** | con_mode sysfs 切换, 无需重启 |

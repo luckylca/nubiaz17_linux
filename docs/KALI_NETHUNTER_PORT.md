@@ -88,33 +88,65 @@ nethunter/build-scripts/kali-nethunter-devices，本地克隆 /tmp/knd）。
   后 build.py 自动跳过下载。Mac 无 pyyaml/requests：python3 -m venv。
 - build.py 读 `kernels/devices.yml`（软链到我们改过的 devices 树即可）。
 
-### K5. 真机验证（进行中，2026-09-16 开始）
-已完成：
-- 下载官方 LineageOS 22.2 nightly 20260911（sha256 47d22d3f…✓）+
-  recovery.img（67b51eb1…✓），存 work/lineageos/
-- fastboot 刷入 LOS recovery（pre-authorized，免确认）
-- `fastboot boot` 此 bootloader 不支持（unknown command）→ 用新做的
-  /root/reboot-recovery（reboot 系统调用带 "recovery" 字符串，同
-  reboot-bl 机制）无按键进 recovery，成功
-- LOS recovery 里 adb 显示 unauthorized 是**正常状态**——选 "Apply
-  update → Apply from ADB" 后变 sideload 才能传包；recovery 菜单必须
-  屏幕操作
-当前阻塞：等用户在场操作 recovery 菜单（Factory Reset → Format data
-→ Apply from ADB），然后我远程 adb sideload ROM → Magisk → NetHunter。
-**注意：此刻手机上 Ubuntu 完好无损**（只刷了 recovery 分区，不影响
-正常启动）。
+### K5. 真机验证 ✅ 完成（2026-09-17）
 
-刷机序列（recovery 菜单选定后全部由我远程执行）：
-1. adb -d sideload work/lineageos/lineage-22.2-20260911-nightly-nx563j-signed.zip
-2. ~~recovery 刷 Magisk~~ 已弃用（v26+ 不再支持 recovery 安装，实测报 "unable to unpack boot image"）→ 改为进系统后 Magisk app 直接安装
-3. ~~recovery sideload NetHunter~~ 该包是 Magisk 模块（updater-script 以 #MAGISK 开头），recovery 会拒绝 → 进系统后 adb push + su -c magisk --install-module
-4. Reboot system now（用户点）→ 首次开机 ~15 分钟
-- 刷官方 LineageOS 22.2 nightly（download.lineageos.org/devices/nx563j）
-  —— **会替换 Ubuntu 系统**；回退路径 = 现成的一键刷机包
-  （work/dist/nx563j-ubuntu-20260915，自测 PASS）
-- Magisk root → 刷 NetHunter zip → 逐项能力验证（HID/注入/BT/OTG…），
-  结果回写 docs/NETHUNTER_CAPABILITIES.md 与 devices.yml features
-- 每次验证记录：日期/内核 commit/产物 SHA256/测试命令/PASS-FAIL（既定规则）
+**最终状态：LOS 22.2 + 自研 NetHunter 内核 + Magisk 30.7 + Kali 2026.2
+full chroot 全部真机运行。** 全部证据如下。
+
+#### 安装路径（实际走通的标准流程）
+1. LOS recovery 刷入 + Factory Reset/Format data（recovery 菜单，用户点）
+2. `adb sideload lineage-22.2-20260911-nightly-nx563j-signed.zip`
+   —— **成功**。传输显示停在 47% + `Total xfer: 1.00x` 是 LOS 官方文档
+   记载的正常现象（zip 内签名块占流尾部），不是失败。
+3. 进系统 → `adb install Magisk-v30.7.apk` → app 内 "Select and Patch a
+   File" 打补丁官方 boot.img（uiautomator+input tap 自动化驱动 UI）→
+   fastboot 刷 `magisk_patched-30700_OLX8M.img`
+   (sha256 fd59d0f2…) → root ✓（`su -c id` → uid=0）
+4. `adb push` 完整包 + `su -c magisk --install-module nethunter.zip` →
+   输出 "Kali NetHunter is now installed!"（AnyKernel 内核注入 +
+   kalifs-full-arm64 解包约 10 分钟）
+5. 重启后内核 = 我们的 CI 产物：`4.4.302-perf+ #1 SMP PREEMPT Wed Sep 16
+   03:11:48 UTC 2026`（commit a5fee84d 构建），Magisk root 保留 ✓
+
+#### 能力实测（2026-09-17，真机，内核 a5fee84d CI 构建）
+| 项 | 结果 | 证据 |
+|---|---|---|
+| chroot | ✅ | Kali 2026.2 Rolling, 1794 包；msfconsole/aircrack-ng/wifite/bettercap/reaver 在 |
+| NetHunter app 套件 | ✅ | com.offsec.nethunter + nhterm + kex + store ×2 已装，bootkali 由 app 首启生成 |
+| Wi-Fi 注入（5GHz ch36） | ✅ host-side | con_mode 0→4，python3(chroot) 发 20/20 probe-req，dmesg `mon-inject: helper vdev 4 ... on 5180 MHz`/`first frame submitted`，无 FW assert；恢复等 helper vdev destroyed 后 con_mode→0，Wi-Fi 服务回启用，全周期干净 |
+| HID | kernel ✅ / app 待测 | CONFIG_USB_CONFIGFS_F_HID=y 在内核；USB Arsenal 实测会断 adb 会话，待后续 |
+| 蓝牙 | ✅ | svc bluetooth enable → adapter ON（"Nubia Z17"） |
+
+#### 踩坑实录（重要教训）
+- **固件门假设被推翻**：首刷 LOS 失败时怀疑 `nubia.verify_modem
+  ("2019-10-15 22:18:21")` 断言（要求 NubiaUI ≥6.25）。用 diag 系统直接
+  grep modem 分区（/dev/sde10）按 recovery_updater.cpp 的 bm_search 模式
+  `Time_Stamp": "` 取到 **2020-11-07 12:30:27**——机器早已是 6.28 固件，
+  断言本就能过。真正首败原因大概率是 47% 传输假象被误判为失败后中断。
+  **教训：sideload 失败后第一时间拉 /tmp/recovery.log，不要猜。**
+- **NH 完整包是 Magisk 模块**（updater-script 以 `#MAGISK` 开头），LOS
+  recovery sideload 必败（~6% 即断，Total xfer 0.13x）。**Magisk v26+
+  删除了 recovery 安装路径**，"unable to unpack boot image" 是正常现象。
+  正确路径就是上面的 3-4 步。
+- **触摸卡死**：LOS 首启后触摸完全无响应——冷启动（长按电源 15s 全关再开）
+  后恢复。疑为 Goodix 触摸 IC 被多次热重启 wedge 住，属硬件状态问题。
+- **busybox 检查失败**（NetHunter app 报 "No busybox is detected"）：
+  模块 post-fs-data.sh 生成的 `busybox_nh` 符号链指向
+  `/data/adb/modules/...` 绝对路径，而 `/data/adb` 是 `drwx------ root`——
+  非 root 的 app/shell 域无法穿透，exec 报 "inaccessible"。修复：模块内
+  改相对链接（`busybox_nh -> busybox_nh-1.38.0`）+ 修补 post-fs-data.sh
+  使其重启后仍生成相对链接 + live overlay `mount -o remount,rw
+  /system/bin` 改链接。**这是官方安装器在 Magisk+Android 15 上的真实
+  bug，值得回报上游。**
+- **Magisk su 授权**：`su` 默认弹窗 10s 超时即拒 → shell 显示
+  "Permission denied"。需在 Magisk Superuser 页给 Shell/NetHunter 开允许
+  （本次用 uiautomator 自动点）。
+- Mac 端 `fastboot` 在刷机命令被中途杀掉后会**挂在等数据的设备侧状态**：
+  设备能枚举但所有命令无响应——只能硬重启手机解决（LOS wiki 也记载了
+  此类 bootloader USB 怪癖，建议 USB 2.0 口/Hub）。
+
+#### 回退路径
+work/dist/nx563j-ubuntu-20260915 一键包仍可刷回 Ubuntu（K5 前的系统）。
 
 ### K6. 上游提交
 - GitLab MR 到 kali-nethunter-devices（devices.yml + fifteen/nx563j-los/）
@@ -125,8 +157,10 @@ nethunter/build-scripts/kali-nethunter-devices，本地克隆 /tmp/knd）。
 - **数据线/OTG 硬件未到**：RTL88XXAU 等外置网卡只做到 kernel-side
   staged，不标进 features。
 - 2.4GHz 内置注入固件 bug（ratectrl_11ac assert）未解：NetHunter 内核
-  继承同一补丁，文档里必须写明「注入仅用 5GHz」的限制。
-- LineageOS 22.2 的 SELinux=enforcing：NetHunter chroot 有现成适配
-  （官方安装器处理），但我们自研注入路径在 Android 下要重新验证
-  （qcacld con_mode 在 Android wlan 服务下的行为可能不同）。
-- 不破坏 Ubuntu 日用机：K5 之前所有工作都不碰手机。
+  继承同一补丁，文档里必须写明「注入仅用 5GHz」的限制（Android 侧
+  2026-09-17 实测 ch36 注入 20/20 无 assert）。
+- ~~LineageOS 22.2 的 SELinux=enforcing：NetHunter chroot 有现成适配~~
+  已实测 chroot 正常工作（2026-09-17）；唯一 SELinux 相关坑是模块
+  busybox 符号链穿透 /data/adb 权限问题（见 K5 踩坑实录，已修）。
+- ~~不破坏 Ubuntu 日用机~~ K5 已执行：Ubuntu 已被 LOS 替换，回退用
+  work/dist 一键包。
