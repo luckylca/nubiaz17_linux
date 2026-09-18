@@ -94,6 +94,16 @@ mkdir -p /mnt/vendor/persist
 mountpoint -q /mnt/vendor/persist || mount -t ext4 -o rw /dev/sda2 /mnt/vendor/persist
 
 export LD_LIBRARY_PATH=/apex/com.android.runtime/lib64/bionic:/apex/com.android.runtime/lib64:/system/lib64:/system/lib64/vndk-29:/system/lib64/hw:/vendor/lib64:/vendor/lib64/hw
+# 2026-09-19: LOS 22.2 覆盖了 sda9, /system 现由 userdata 的 /system-min 提供
+# (rc.boot.ubuntu 先行 bind)。system-min 最初用 LOS A15 ramdisk 库拼装, 但
+# vendor 是 stock SDK29: A15 libbinder 的 defaultServiceManager() 新增
+# WaitForProperty("servicemanager.ready") — 无 Android init/property service
+# 时四个守护(cnss-daemon/pm-service/pm-proxy/wcnss_filter)纯用户态死循环各
+# 占满一个大核(实测 20 分钟 100% CPU, gdb 栈见 UBUNTU_AUDIT)。换成 GitHub
+# Jiovanni-dump/nubia_nx563j_dump 的 A9 stock 库后恢复正常(0-5% CPU)。
+# A9 libselinux 缺 A10 符号 selinux_vendor_log_callback (vndservicemanager
+# 需要) → LD_PRELOAD 一个 nostdlib shim 补符号。
+export LD_PRELOAD=/system/lib64/libselinux_shim.so
 export PATH=/vendor/bin:/system/bin:$PATH
 
 # --- 1. firmware staging (BOTH fs roots: chroot AND initramfs) -------------
@@ -203,7 +213,12 @@ if ! pidof vndservicemanager >/dev/null 2>&1; then
 		>/dev/null 2>&1 &
 	sleep 1
 fi
-kd pm-service
+# pm-service is NOT started (2026-09-19): under the A9-libs system-min it
+# SIGABRTs on an invalid free right after "old property service protocol"
+# (SDK29 vendor binary vs A9 libcutils heap mismatch). wlan0 association and
+# STA Wi-Fi verified unaffected with it dead (pm-proxy alone suffices). The
+# crash-looping keepalive also wasted a core restarting it every 2s.
+# kd pm-service
 kd time_daemon
 kd ipacm
 sleep 2
