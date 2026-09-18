@@ -28,7 +28,7 @@ jobs:
     env:
       KERNEL_REF: ${{ inputs.kernel_ref || 'cda6a278ffa94c5a6aa428c4ab98b8ba0356c0d6' }}
       DEFCONFIG: ${{ inputs.defconfig || 'lineageos_nx563j_defconfig' }}
-      CONFIG_FRAGMENT: ${{ inputs.config_fragment || '' }}
+      CONFIG_FRAGMENT: ${{ inputs.config_fragment || 'config/downstream-daily.fragment' }}
 
     steps:
       - uses: actions/checkout@v4
