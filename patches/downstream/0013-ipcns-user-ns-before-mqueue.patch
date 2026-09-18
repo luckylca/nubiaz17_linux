@@ -1,0 +1,52 @@
+From: Claude Code <noreply@anthropic.com>
+Date: Sat, 19 Sep 2026 02:50:00 +0800
+Subject: [PATCH] ipc/namespace: assign user_ns BEFORE mq_init_ns
+
+This CAF 4.4 tree backported the 4.9-style user_ns-aware mqueue_mount /
+mount_ns() (6-arg form taking ns->user_ns), but kept the 4.4 create_ipc_ns
+ordering where mq_init_ns() runs BEFORE ns->user_ns is assigned.
+
+mq_init_ns() kern-mounts mqueue for the new ipc namespace; the superblock
+records s_user_ns = ns->user_ns. With the old ordering that field is
+uninitialized kmalloc garbage. Every later userspace mount of mqueue inside
+the new ipc namespace then matches that superblock in sget_userns() but fails
+the user_ns equality check -> -EBUSY.
+
+Effect on device (2026-09-19, kretprobe-verified): any container runtime
+that creates CLONE_NEWIPC and mounts mqueue (docker/runc default OCI spec)
+fails with
+
+  error mounting "mqueue" to rootfs at "/dev/mqueue": ... device or resource
+  busy
+
+Fix by moving the user_ns assignment above mq_init_ns(), matching vanilla
+4.9+ create_ipc_ns(). On the mq_init_ns failure path, drop the reference.
+
+Verified on NX563J Ubuntu 24.04 chroot: after this patch `docker run` with
+the default (private ipc namespace) spec completes.
+---
+ ipc/namespace.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/ipc/namespace.c b/ipc/namespace.c
+--- a/ipc/namespace.c
++++ b/ipc/namespace.c
+@@ -34,8 +34,10 @@ static struct ipc_namespace *create_ipc_ns(struct user_namespace *user_ns,
+ 	ns->ns.ops = &ipcns_operations;
+
+ 	atomic_set(&ns->count, 1);
++	ns->user_ns = get_user_ns(user_ns);
+ 	err = mq_init_ns(ns);
+ 	if (err) {
++		put_user_ns(ns->user_ns);
+ 		ns_free_inum(&ns->ns);
+ 		kfree(ns);
+ 		return ERR_PTR(err);
+@@ -46,7 +48,5 @@ static struct ipc_namespace *create_ipc_ns(struct user_namespace *user_ns,
+ 	msg_init_ns(ns);
+ 	shm_init_ns(ns);
+
+-	ns->user_ns = get_user_ns(user_ns);
+-
+ 	return ns;
+ }
