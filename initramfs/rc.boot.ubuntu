@@ -11,6 +11,21 @@ PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
 hostname nx563j 2>/dev/null
 
+# 2026-09-19 docker exec fix: 4.4 mntns_install() resets a setns()ing
+# process's root to the namespace root mount after follow_down, and
+# pivot_root never updates ns->root. Container namespaces therefore keep
+# the initramfs rootfs as their root, and `docker exec` landed in the
+# initramfs (busybox) instead of the container rootfs. Stacking this
+# rootfs bind on top of PID1's "/" makes follow_down cross rootfs ->
+# ubuntu -> container overlay, so exec enters the container correctly.
+# Must run before dockerd starts (namespaces are copied at container
+# creation). Verified live 2026-09-19: exec gets alpine-release,
+# resolv.conf, working DNS. First rslave3 attempt did the move in
+# initramfs init BEFORE chroot — that breaks boot (PID1 root stays
+# rootfs, rc.boot.ubuntu not found); doing it from inside the chroot
+# via /proc/1/root works.
+/proc/1/root/bin/busybox mount -o move /proc/1/root/mnt/rootfs/ubuntu /proc/1/root >/var/log/mntmove.log 2>&1; echo "move_rc=$?" >>/var/log/mntmove.log
+
 # /run must be a fresh tmpfs (see wifi-bringup4.sh header: stale
 # /run/dbus/dbus.pid on the persistent rootfs kills bluetoothd).
 mountpoint -q /run || mount -t tmpfs tmpfs /run
@@ -47,6 +62,15 @@ if [ -e /dev/fb0 ] && [ -x /root/fbdash/fbdash ]; then
   echo 1500 > /sys/class/leds/wled/brightness 2>/dev/null
 fi
 
+# 2026-09-19: LOS 刷机覆盖了 sda9(原 Android /system), vendor 守护进程
+# 缺 bionic runtime。用 LOS recovery ramdisk 抽出的最小 system
+# (linker64+bionic libs, 存 userdata /system-min) 补上。libnl.so 来自
+# LOS system 镜像(transfer list 重排后提取)。
+# 必须在 wifi-bringup4 启动前完成: wb4 自己也尝试 bind /system,
+# 若它先绑了空目录, 本处的 mountpoint 检查会跳过 → cnss-daemon
+# 找不到 libnl.so 崩溃循环, wlan 链整靴报废(2026-09-19 实踩)。
+[ -f /system-min/system/bin/linker64 ] && { mkdir -p /system; mountpoint -q /system || mount --bind /system-min/system /system; }
+
 # Wi-Fi + BT bring-up in background (proven recipe; ~3-4 min to wlan0 +
 # DHCP + NTP + hci0 + bluetoothd).
 [ -x /root/wifi-bringup4.sh ] && setsid sh -c "/root/wifi-bringup4.sh > /tmp/wb4.log 2>&1" &
@@ -54,3 +78,6 @@ fi
 # ACCA-style charge limiter: hold the battery between LOW/HIGH (default
 # 80/90) by toggling the qpnp-smb2 charging_enabled node. Runs forever.
 [ -x /root/charge-ctl.sh ] && setsid /root/charge-ctl.sh >/dev/null 2>&1 &
+
+# dockerd (2026-09-19): cgroup v1 mounts + iptables legacy + dockerd.
+sh /root/docker-env.sh

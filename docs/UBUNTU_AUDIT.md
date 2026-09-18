@@ -256,3 +256,149 @@ Wi-Fi 未关联时,设备经 USB gadget 走 Mac 上网:/tmp/usbproxy.py
 (Mac 侧 CONNECT 代理 10.42.0.32:8080,免 sudo NAT)+ 设备
 ip route add default via 10.42.0.32 + apt -o Acquire::https::Proxy。
 设备时钟 1970 导致 TLS "certificate is not yet valid" 时需先 date -s。
+
+---
+
+## 2026-09-19 Wi-Fi 守护死循环根因 + Docker 全链路
+
+### Wi-Fi: LOS 覆盖 sda9 引发的 ABI 错位(随机死机头号嫌疑)
+
+- 现象: cnss-daemon/pm-service/pm-proxy/wcnss_filter 各 100% CPU 纯用户态
+  死循环(wchan=0, strace 无 syscall), 20+ 分钟; wlan0 不出现。
+- gdb 栈: `WaitForProperty("servicemanager.ready")` ← `defaultServiceManager()`
+  ← `pm_register_connect`。LOS A15 libbinder 新增 servicemanager.ready 等待,
+  Ubuntu 无 Android init/property service → 永远等不到 → 死循环。
+- vendor (sde41) 是 stock SDK29 没被 LOS 动过; /system-min 却用 LOS A15
+  ramdisk 库拼装 → A10 vendor 二进制 + A15 libbinder 错位。
+- 修: /system-min 换成 GitHub Jiovanni-dump/nubia_nx563j_dump 的 A9 stock
+  lib64+bin (partial clone+sparse checkout, 314MB); A9 libselinux 缺 A10 符号
+  `selinux_vendor_log_callback` → gcc -nostdlib 编 LD_PRELOAD shim 补符号
+  (/system-min/system/lib64/libselinux_shim.so, wifi-bringup4.sh 里 export)。
+- pm-service 在 A9 库下 SIGABRT(invalid free, "old property service protocol"
+  之后)且非必需 → 参照 cnd 先例从 keepalive 移除, wlan0 实测无损。
+- 结果: 守护 CPU 100%→0-5%; wlan0/wlan1/p2p0 出现; 扫到并连上 Mac 热点
+  5GHz(WPA2), DHCP 192.168.2.7; Wi-Fi 直连互联网 OK; Wi-Fi SSH 第二控制
+  通道 OK。路由: wlan0 metric 100 主, usb0 metric 200 备。
+
+### Docker: 三个真坑, 全部根因实锤
+
+1. **dockerd NewDaemon panic**: 表象 nil deref (daemon.go:1080 cleanup),
+   真因被 panic 吞掉 —— devices cgroup 没挂上(getSysInfo CgroupDevicesEnabled
+   检查)。docker-env.sh 此前从未被 rc.boot.ubuntu 调用(日志是手动跑的旧
+   记录)。已把 `sh /root/docker-env.sh` 写进 rc.boot.ubuntu。
+2. **docker import "remount /, flags: 0x84000: EINVAL"**: go-archive
+   goInChroot 在 unshare(CLONE_FS|CLONE_NEWNS) 后 MakeRSlave("/"); 内核 4.4
+   do_change_type 要求 `path->dentry == path->mnt->mnt_root`, 而 chroot 根
+   是普通目录、且 chroot 发生时钉住的 vfsmount 是 sda10 整盘挂载(mnt_root
+   是盘根 ≠ ubuntu 目录)→ 永远 EINVAL。chroot 之后再自绑无效(根引用不变)。
+   **修: initramfs init 在 chroot 前先 `mount -o bind $TARGET $TARGET`**
+   (boot-rslave2-signed.img)。注意必须在 dev/proc/sys bind 之前, 否则
+   非递归自绑遮蔽子挂载 → Ubuntu 没 /proc(第一次踩中, rslave2 修正顺序)。
+   刷入后实测 `mount --make-rslave /` OK, docker import 立刻成功。
+3. **runc 挂 mqueue EBUSY**: kretprobe 实锤 sget_userns 返回 -EBUSY
+   (arg1=0xfffffffffffffff0)。根因: CAF 4.4 回填了 4.9 的 user_ns 感知
+   mqueue_mount/mount_ns, 但 create_ipc_ns 仍按 4.4 顺序**先 mq_init_ns
+   后设 user_ns** —— kern-mount mqueue 时 sb->s_user_ns 是 kmalloc 垃圾,
+   之后容器内挂 mqueue 在 user_ns 比对处必 -EBUSY。vanilla 4.9+ 顺序相反。
+   修: patches/downstream/0013-ipcns-user-ns-before-mqueue.patch (CI 构建中)。
+   补丁落地前的临时绕行: `docker run --ipc=host`(同 ns 重复挂 mqueue 合法)。
+
+### Docker 实测矩阵(2026-09-19, 内核 e395ffb7+rslave2 ramdisk)
+
+| 项 | 结果 |
+|---|---|
+| docker import 本地 rootfs tar | PASS |
+| run/exec/exit | PASS(--ipc=host) |
+| 桥接 NAT 出网 (容器→aliyun) | PASS |
+| 端口映射 Mac→容器 (Wi-Fi 192.168.2.7:8080 与 USB 10.42.0.1:8080) | PASS |
+| --memory=128m 回读 | PASS (134217728) |
+| --cpu-shares=512 回读 | PASS |
+| -v /root:/mnt:ro | PASS |
+| docker pull alpine:3.20 (dockerproxy.net 镜像) | PASS |
+| docker build (RUN 步默认 ipc ns) | 等 0013 内核补丁 |
+| 默认 ipc ns 容器 | 等 0013 内核补丁 |
+| 手机本机 127.0.0.1 访问映射端口 | 超时(route_localnet=1 后仍不通, 低优先级) |
+
+---
+
+## 2026-09-19(晚) Docker 收官 + 电池托盘图标 + Wi-Fi 竞争修复
+
+内核: boot-0013-final-signed.img (sha256
+2c05d6cdc619aa9212a39fd0c82b668a8ff8b21971a2132f48435e6145b8a35c, sde18),
+含 0013 ipcns 补丁 + docker fragment, ramdisk-rslave2。
+
+### docker exec 落到 initramfs —— 4.4 mntns_install 根因(最后一个docker坑)
+
+- 表象: `docker exec` 进容器看到的不是容器 rootfs, 而是 initramfs
+  (busybox, /fwimage, logdisk.img); 容器 mountinfo 里
+  resolv.conf/hostname/hosts 挂在 `/mnt/rootfs/ubuntu/etc/...`。
+- 根因(源码实锤, fs/namespace.c @ cda6a278):
+  1. 4.4 `mntns_install()`(line ~3484) 把 setns 进程的 fs root/pwd 重置为
+     `mnt_ns->root`(follow_down 之后);
+  2. `pivot_root` **从不更新** `ns->root`(全文件仅 2933/2977/3027 三处
+     赋值, 都在 ns 创建/复制路径);
+  3. 容器 mount ns 复制自 dockerd 的 ns, 其 root 是 initramfs rootfs;
+     runc pivot_root 之后 ns->root 仍指 initramfs → dockerd exec 进程
+     setns 时被内核拉回 initramfs。
+- 修(rc.boot.ubuntu, 必须在 dockerd 启动前):
+  `/proc/1/root/bin/busybox mount -o move /proc/1/root/mnt/rootfs/ubuntu /proc/1/root`
+  把 ubuntu 自绑叠到 rootfs `/` 之上; follow_down 从 ns->root 依次穿过
+  rootfs→ubuntu→(runc pivot_root 后)容器 overlay。
+- **失败变体**: 在 initramfs init 里 chroot 之前做 move → PID1 root 停留
+  在 rootfs, rc.boot.ubuntu 找不到, 掉 diag shell(boot-0013-rslave3,
+  勿刷)。从 chroot 内经 /proc/1/root 操作才正确。
+- 实测: exec 读到 alpine-release 3.20.10、/etc/resolv.conf、DNS 解析 OK。
+
+### Docker 最终矩阵(全部硬件实测 PASS, 2026-09-19)
+
+| 项 | 结果 |
+|---|---|
+| dockerd 29.1.3 启动 | PASS |
+| 默认 ipc ns `docker run`(0013 补丁) | PASS |
+| `docker build`(RUN 步) | PASS (nx563j/buildtest:v2) |
+| `docker exec` 进正确 rootfs | PASS(见上) |
+| 桥接 NAT 出网 + DNS | PASS (ping 223.5.5.5 0% loss) |
+| 端口映射 Wi-Fi 192.168.2.7:8080 / USB 10.42.0.1:8080 | PASS (busybox nc HTTP 服务) |
+| --memory=128m / --cpu-shares=512 | PASS (134217728 / 512) |
+| -v bind | PASS |
+| 已知限制 | 手机本机 127.0.0.1 访问映射端口不通(低优先级) |
+
+### 电池托盘图标(LXQt)修复
+
+- 表象: 面板托盘无电池图标; SNI 已注册、tooltip "Fully charged (100%)"
+  正确, 但 IconName 为空、IconPixmap 是 256×256 **全零**(全透明)。
+- 根因(lxqt-powermanagement 1.4.0 源码): `useThemeIcons` 配置键默认
+  **false** → 走 `generatedIcon()` 用 QSvgRenderer 把内嵌 SVG 画到
+  256×256 透明 pixmap 上 —— 本机这个渲染路径产出全透明(QtSvg 渲染
+  失败, 未深追)。与图标主题无关(最初误判 breeze 未安装, 实际
+  /usr/share/icons/breeze 齐全)。
+- 修: `/root/.config/lxqt/lxqt-powermanagement.conf` [General] 加
+  `useThemeIcons=true`, lxqt.conf `icon_theme=breeze`(freedesktop 命名
+  battery-full-charging 等齐全; Adwaita 只有 -symbolic 变体, 不可用)。
+  killall lxqt-powermanagement 由 lxqt-session 自动 respawn。
+- 实测: SNI IconName="battery-full-charging", 托盘渲染绿色插头图标;
+  **重启后保持**(配置在持久 rootfs)。
+
+### Wi-Fi 启动竞争修复(本次重启 wlan0 不出现的根因)
+
+- 表象: 重启后 wlan0 不出现, cnss-daemon 崩溃循环 "libnl.so not found"
+  约 2 分钟; 一次性 `echo ON > /dev/wlan` 已在坏窗口消耗, 之后所有 ON
+  写都超时 EINVAL("Invalid value received from framework" 驱动源码实锤
+  等待 wlan_start_comp 超时), wlan 链整靴报废。
+- 竞争: rc.boot.ubuntu 旧顺序先后台启动 wb4、后 bind /system-min→/system;
+  wb4 自己也 `mountpoint -q /system || mount --bind /tmp/system/system
+  /system` —— 若 wb4 抢先且 sda9 已失效(LOS 覆盖, 挂载失败),
+  /tmp/system/system 是空目录 → /system 被空绑, rc.boot 的 mountpoint
+  检查跳过 → vendor 守护全体找不到 bionic 库。
+- 修(双侧防御):
+  1. rc.boot.ubuntu: /system-min bind 移到 wb4 启动**之前**;
+  2. wb4: 只在源目录确有 linker64 时才 bind(真 sda9 优先, 否则
+     /system-min, 绝不绑空目录); cnss-daemon 启动前有界等待
+     linker64+libnl.so 可见并打日志; ON 写改为每 10s 重试直至 wlan0
+     出现(上限 15 次)。
+- **诊断假象**: wb4 诊断里 "/system is not a mountpoint" 是 toybox
+  mountpoint 对同设备子目录 bind 的误报(PATH 里 /system/bin 优先),
+  不是真问题。同一文件 toybox ls 显示 UTC 日期、GNU ls 显示 CST,
+  差 8 小时, 对比 mtime 时注意。
+- 实测(修后重启): wlan0 UP + DHCP 192.168.2.7, hci0 UP, docker run/exec
+  PASS, 电池图标在。

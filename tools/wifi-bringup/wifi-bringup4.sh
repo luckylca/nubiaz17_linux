@@ -84,7 +84,19 @@ mountpoint -q /tmp/vendor || mount -o ro /dev/sde41 /tmp/vendor
 mountpoint -q /tmp/system || mount -o ro /dev/sda9 /tmp/system
 mkdir -p /vendor /system /apex/com.android.runtime
 mountpoint -q /vendor || mount --bind /tmp/vendor /vendor
-mountpoint -q /system || mount --bind /tmp/system/system /system
+# 2026-09-19 (race fix): /system must end up bound to a tree that actually
+# contains linker64+lib64. sda9 is LOS-clobbered (mount fails); binding the
+# empty /tmp/system/system here would satisfy the mountpoint check while
+# leaving vendor daemons unable to link libnl.so (cnss-daemon crash-looped
+# ~2 min and the wlan chain never recovered — observed 2026-09-19). Prefer
+# real sda9, else userdata /system-min; never bind an empty dir.
+if ! mountpoint -q /system; then
+	if [ -e /tmp/system/system/bin/linker64 ]; then
+		mount --bind /tmp/system/system /system
+	elif [ -e /system-min/system/bin/linker64 ]; then
+		mount --bind /system-min/system /system
+	fi
+fi
 mountpoint -q /apex/com.android.runtime || \
 	mount --bind /system/apex/com.android.runtime.release /apex/com.android.runtime
 mkdir -p /vendor/firmware_mnt
@@ -223,6 +235,21 @@ kd time_daemon
 kd ipacm
 sleep 2
 kd pm-proxy
+# 2026-09-19: one boot left cnss-daemon crash-looping on "library libnl.so
+# not found" while /system was still unsettled; the one-shot echo ON below
+# fired into that window, the driver wedged, and wlan0 never came (later ON
+# writes just time out with EINVAL). Wait (bounded) until the link picture
+# is complete and log what we see for post-mortems.
+for i in $(seq 1 30); do
+	[ -e /system/bin/linker64 ] && [ -e /system/lib64/libnl.so ] && break
+	sleep 2
+done
+{
+	date
+	echo "linker64: $(ls -la /system/bin/linker64 2>&1)"
+	echo "libnl.so: $(ls -la /system/lib64/libnl.so 2>&1)"
+	mountpoint /system
+} >>/var/log/cnss-daemon.log 2>&1
 # cnss-daemon wants -n (no daemonize) -l (logcat); run foreground-logged
 setsid /bin/sh -c "while true; do LD_LIBRARY_PATH=$LD_LIBRARY_PATH /vendor/bin/cnss-daemon -n -dd >>/var/log/cnss-daemon.log 2>&1; sleep 2; done" \
 	>/dev/null 2>&1 &
@@ -230,7 +257,15 @@ echo "keepalive: cnss-daemon"
 
 # --- 7. register wlan driver (waits for FW ready) ---------------------------
 [ -e /dev/wlan ] || mknod /dev/wlan c 226 0
-( echo ON > /dev/wlan ) &
+# 2026-09-19: retry ON until wlan0 appears (bounded). A single ON consumed
+# in a bad window wedges the load path for the rest of the boot; a retry
+# every 10s survives slow cnss init. Harmless once the driver is loaded
+# (write handler short-circuits when cds_is_driver_loaded()).
+setsid /bin/sh -c 'for i in $(seq 1 15); do
+	[ -d /sys/class/net/wlan0 ] && exit 0
+	echo ON > /dev/wlan 2>/dev/null
+	sleep 10
+done' >/dev/null 2>&1 &
 sleep 1
 
 # --- 8. boot the modem (hold open = powered) --------------------------------

@@ -50,6 +50,11 @@ ensure_checkout() {
     rm -rf "$dir"
     git clone "$repo" "$dir"
   fi
+  # Skip the network entirely when the cached checkout already sits on the
+  # pinned commit (2026-09-14: flaky googlesource access broke repacks).
+  if [[ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" = "$commit" ]]; then
+    return 0
+  fi
   git -C "$dir" fetch --depth=1 origin "$commit"
   git -C "$dir" checkout --detach "$commit" >/dev/null
   test "$(git -C "$dir" rev-parse HEAD)" = "$commit"

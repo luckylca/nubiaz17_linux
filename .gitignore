@@ -6,3 +6,6 @@ backups/
 *.bin
 *.log
 __pycache__/
+
+# locally built macOS tool binary (source is tracked)
+tools/los-fix/pstore-dec
