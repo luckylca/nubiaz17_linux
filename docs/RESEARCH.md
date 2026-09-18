@@ -301,6 +301,17 @@ Lessons recorded:
   static stub in `tools/reboot-bootloader/` (hand-assembled, wrapped in a
   minimal ELF64 by `build_reboot_bl.sh`, no cross-binutils needed) does this
   and is proven on device.
+  **Caveat (2026-09-18): `reboot-bl` wedged USB on the Ubuntu-dist system** —
+  with the ECM gadget up, the stub restarted the device into a state that
+  enumerates as `19d2:0xffae` ("Qualcomm CDMA Technologies MSM") but speaks
+  no fastboot protocol (host `fastboot` waits forever; Mac-side kill and even
+  forced USB re-enumeration do not recover it). Only a device hard reset
+  (power 15s) clears it. Historical successes were on the Alpine/diag system;
+  whether the gadget-active-at-restart or the Ubuntu initramfs shutdown path
+  is the trigger is unresolved. **Until root-caused, do not use reboot-bl /
+  reboot-rec; flash boot from inside Ubuntu instead** (by-name boot partition
+  is writable from the OS — see tools/docker/flash-boot-in-system.sh, needs
+  the user's explicit dd-write authorization).
 - **No `sftp-server` / `scp` on the Alpine minirootfs**, so OpenSSH `scp`
   fails ("Connection closed"). Transfer files with
   `ssh ... 'cat > /path' < localfile` (or the foreground `nc` pattern).
