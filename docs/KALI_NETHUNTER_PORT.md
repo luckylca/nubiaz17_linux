@@ -147,7 +147,12 @@ full chroot 全部真机运行。** 全部证据如下。
   此类 bootloader USB 怪癖，建议 USB 2.0 口/Hub）。
 
 #### 回退路径
-work/dist/nx563j-ubuntu-20260915 一键包仍可刷回 Ubuntu（K5 前的系统）。
+- 回 Ubuntu：work/dist/nx563j-ubuntu-20260915 一键包。
+- 回 Kali（刷走之前已做状态备份，2026-09-18）：
+  `work/kali-state-backup-20260918/`——含 boot 分区整盘 dump
+  （Magisk+NH 内核精确状态，sha256 a25ad3c1…）、已修复 busybox 的
+  nethunter 模块包、nh_files、全部验证脚本、magisk.db；README 里有
+  快速路（10 分钟）/完整路（五步法）两种恢复流程。
 
 ### K6. 上游提交
 - GitLab MR 到 kali-nethunter-devices（devices.yml + fifteen/nx563j-los/）
