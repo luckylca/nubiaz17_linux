@@ -20,7 +20,7 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 VER="${1:-$(date +%Y%m%d)}"
-BOOTIMG="$ROOT/work/boot-nethunter-daily2.img"
+BOOTIMG="$ROOT/work/docker-kernel-repack/boot-0013-final-signed.img"
 DEST="$ROOT/work/dist/nx563j-ubuntu-$VER"
 SSH="ssh -o ConnectTimeout=8 root@10.42.0.1"
 DEV_SRC=/proc/1/root/mnt/rootfs   # userdata root, seen from the Ubuntu chroot
@@ -53,9 +53,11 @@ echo "[3/7] build userdata ext4 image on device"
 # userdata root = Alpine base + /ubuntu + /boot-target + ~20GB legacy
 # Android /data junk (app/data/media/dalvik-cache/...). Package only what
 # the boot chain needs — include list, not exclude list.
-# Runtime-regenerated caches (fwimage, /system+apex bind targets for bionic
-# libs off sda9, var/log, tmp, caches) ship EMPTY — wifi-bringup4.sh
-# re-creates/re-populates them (mkdir -p + mount from sde10/sda9).
+# Runtime-regenerated caches (fwimage, /system+apex bind targets, var/log,
+# tmp, caches) ship EMPTY — wifi-bringup4.sh re-creates/re-populates them
+# (mkdir -p + mount from sde10). NOTE 2026-09-19: sda9 (原 Android /system)
+# 已被 LOS 覆盖作废, /system 现在由 userdata 自带的 ubuntu/system-min 提供
+# (A9 stock bionic 库) —— system-min 必须随包发布, 不在排除列表里。
 INCLUDES="boot-target ubuntu bin etc home lib local media mnt opt root run \
 sbin srv tmp usr var dev proc sys bt_firmware sdcard"
 EXCLUDES="ubuntu/system/* ubuntu/apex/* ubuntu/fwimage/* ubuntu/vendor/* \
@@ -107,7 +109,7 @@ echo "[6/7] manifest"
   echo "userdata.img.gz sha256: $(shasum -a 256 "$DEST/userdata.img.gz" | awk '{print $1}')"
   echo "userdata payload: ${STREAM_MB}MB (of ~30GB used; legacy Android /data excluded), image: ${IMG_MB}MB"
   echo "excluded by design: Android /data legacy (app,data,media,dalvik-cache,...),"
-  echo "  /ubuntu/system+apex+fwimage (runtime re-staged from sda9/sde10), logs, caches"
+  echo "  /ubuntu/system+apex+fwimage (runtime re-staged from sde10), logs, caches;"
   echo "packaging commit: $(git -C "$ROOT" rev-parse HEAD)"
 } > "$DEST/MANIFEST.txt"
 $SSH "chroot /proc/1/root/mnt/rootfs/ubuntu dpkg -l 2>/dev/null || dpkg -l" \

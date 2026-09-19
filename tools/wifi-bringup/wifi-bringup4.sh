@@ -195,6 +195,38 @@ done
 mkdir -p /bt_firmware
 mountpoint -q /bt_firmware || mount -o ro /dev/sde22 /bt_firmware 2>/dev/null
 
+# --- 5c. debugfs + modem FIRST (2026-09-19 ordering fix) --------------------
+# 实测死锁链: cnss-daemon 是 modem DMS 的 QMI 客户端(二进制引用
+# dms_get_service_object_internal_v01), modem 不在线 → 不注册 WLFW
+# (QMI service 0x45) → echo ON 触发的驱动加载永久卡死(icnss stats 全 0)
+# → 卡死的驱动又挡住 modem PIL, modem 卡 OFFLINING, 全链 wedge。
+# 正确顺序: 先起 modem 并等 ONLINE, 再 cnss-daemon, 最后(看到 0x45 才)ON。
+# debugfs 是 WLFW 观测口(dump_servers)。
+mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+if [ ! -f /tmp/modem.hold.pid ] || ! kill -0 "$(cat /tmp/modem.hold.pid 2>/dev/null)" 2>/dev/null; then
+	setsid /bin/sh -c 'exec 9<>/dev/subsys_modem; echo $$ > /tmp/modem.hold.pid; while true; do sleep 3600; done' \
+		>/dev/null 2>&1 &
+fi
+for i in $(seq 1 30); do
+	[ "$(cat /sys/bus/msm_subsys/devices/subsys6/state 2>/dev/null)" = "ONLINE" ] && break
+	sleep 2
+done
+MSTATE=$(cat /sys/bus/msm_subsys/devices/subsys6/state 2>/dev/null)
+if [ "$MSTATE" != "ONLINE" ]; then
+	# 卡 OFFLINING 实踩过一次(无 PIL 日志、crash_count=0): 释放 hold 让
+	# 下电完成, 重开 hold 触发 PIL 重新加载 —— 运行时实测可恢复整个链条。
+	echo "modem stuck ($MSTATE), bouncing hold" >>/var/log/cnss-daemon.log
+	kill "$(cat /tmp/modem.hold.pid 2>/dev/null)" 2>/dev/null
+	sleep 5
+	setsid /bin/sh -c 'exec 9<>/dev/subsys_modem; echo $$ > /tmp/modem.hold.pid; while true; do sleep 3600; done' \
+		>/dev/null 2>&1 &
+	for i in $(seq 1 45); do
+		[ "$(cat /sys/bus/msm_subsys/devices/subsys6/state 2>/dev/null)" = "ONLINE" ] && break
+		sleep 2
+	done
+fi
+echo "modem state: $(cat /sys/bus/msm_subsys/devices/subsys6/state 2>/dev/null)" >>/var/log/cnss-daemon.log
+
 # --- 6. QMI / peripheral daemons (keepalive) --------------------------------
 # NOTE: every inner "sh -c" below is pinned to /bin/sh with an explicit
 # PATH. With the section-0 PATH prepend (/vendor/bin:/system/bin first) a
@@ -257,22 +289,30 @@ echo "keepalive: cnss-daemon"
 
 # --- 7. register wlan driver (waits for FW ready) ---------------------------
 [ -e /dev/wlan ] || mknod /dev/wlan c 226 0
-# 2026-09-19: retry ON until wlan0 appears (bounded). A single ON consumed
-# in a bad window wedges the load path for the rest of the boot; a retry
-# every 10s survives slow cnss init. Harmless once the driver is loaded
-# (write handler short-circuits when cds_is_driver_loaded()).
+# 2026-09-19 (WLFW gate): ON 只在 cnss-daemon 注册 WLFW(0x45) 后才允许写。
+# 提前写 ON 会把驱动加载永久卡死并连累 modem(见 5c)。0x45 60s 不出现就
+# 重启一次 cnss-daemon 再等 60s。ON 重试循环兜住慢启动; 驱动加载完成后
+# 写 ON 无害(handler 在 cds_is_driver_loaded 时直接短路返回)。
+for i in $(seq 1 30); do
+	grep -q "0x00000045" /sys/kernel/debug/msm_ipc_router/dump_servers 2>/dev/null && break
+	sleep 2
+done
+if ! grep -q "0x00000045" /sys/kernel/debug/msm_ipc_router/dump_servers 2>/dev/null; then
+	echo "WLFW not registered, restarting cnss-daemon" >>/var/log/cnss-daemon.log
+	pkill -x cnss-daemon
+	for i in $(seq 1 30); do
+		grep -q "0x00000045" /sys/kernel/debug/msm_ipc_router/dump_servers 2>/dev/null && break
+		sleep 2
+	done
+fi
+echo "WLFW gate: $(grep -c 0x00000045 /sys/kernel/debug/msm_ipc_router/dump_servers 2>/dev/null)" >>/var/log/cnss-daemon.log
 setsid /bin/sh -c 'for i in $(seq 1 15); do
 	[ -d /sys/class/net/wlan0 ] && exit 0
+	grep -q "0x00000045" /sys/kernel/debug/msm_ipc_router/dump_servers 2>/dev/null || { sleep 10; continue; }
 	echo ON > /dev/wlan 2>/dev/null
 	sleep 10
 done' >/dev/null 2>&1 &
 sleep 1
-
-# --- 8. boot the modem (hold open = powered) --------------------------------
-if [ ! -f /tmp/modem.hold.pid ] || ! kill -0 "$(cat /tmp/modem.hold.pid 2>/dev/null)" 2>/dev/null; then
-	setsid /bin/sh -c 'exec 9<>/dev/subsys_modem; echo $$ > /tmp/modem.hold.pid; while true; do sleep 3600; done' \
-		>/dev/null 2>&1 &
-fi
 
 # --- 9. watch ----------------------------------------------------------------
 echo "watching for wlan0 ..."
@@ -295,14 +335,35 @@ for i in $(seq 1 60); do
 		for i in $(seq 1 240); do
 			wpa_cli -i wlan0 status 2>/dev/null | grep -q "wpa_state=COMPLETED" && {
 				echo "associated, running DHCP" >>/var/log/udhcpc-wlan0.log
+				# 2026-09-19(晚): 一次启动 4 次握手完成但 RX 数据帧全冻
+				# (GTK/数据通路静默失败), DHCP DISCOVER 永远无回应;
+				# wpa_cli reassociate 后立刻恢复。关联后先验证 RX 在涨,
+				# 不涨就 reassociate 再重新确认。
+				rx1=$(ip -s link show wlan0 | awk "/RX:/{getline; print \$1}")
+				sleep 4
+				rx2=$(ip -s link show wlan0 | awk "/RX:/{getline; print \$1}")
+				if [ "$rx1" = "$rx2" ]; then
+					echo "RX frozen ($rx1), reassociating" >>/var/log/udhcpc-wlan0.log
+					wpa_cli -i wlan0 reassociate >>/var/log/udhcpc-wlan0.log 2>&1
+					sleep 15
+					continue
+				fi
 				# 2026-09-09: a single udhcpc raced and lost its lease once
-				# (lease logged, no address on wlan0) - verify and retry
-				for try in 1 2 3; do
+				# (lease logged, no address on wlan0) - verify and retry.
+				# 2026-09-19(晚): 热点 DHCP 可能慢/丢包, 3 次不够, 改为
+				# 拿到地址为止(有界 ~10 分钟)。
+				for try in $(seq 1 20); do
 					$DHCP >>/var/log/udhcpc-wlan0.log 2>&1
 					ip -4 addr show wlan0 | grep -q inet && break
 					echo "DHCP try $try: no address, retrying" >>/var/log/udhcpc-wlan0.log
 					sleep 2
 				done
+				ip -4 addr show wlan0 | grep -q inet || {
+					echo "DHCP exhausted, reassociating" >>/var/log/udhcpc-wlan0.log
+					wpa_cli -i wlan0 reassociate >>/var/log/udhcpc-wlan0.log 2>&1
+					sleep 15
+					continue
+				}
 				# 2026-09-09: RTC has no working hwclock write and boots at
 				# 1970; once we have a lease, set the clock (aliyun NTP is
 				# reachable where pool.ntp.org is not) so HTTPS validates.
