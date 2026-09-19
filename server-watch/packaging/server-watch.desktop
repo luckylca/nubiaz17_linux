@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Server Watch
+Comment=Desktop server clock and system monitor
+Exec=/usr/local/bin/server-watch-dashboard
+Icon=/usr/local/share/server-watch/icon.png
+Terminal=false
+Categories=Utility;System;
+StartupNotify=false

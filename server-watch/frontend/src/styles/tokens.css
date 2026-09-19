@@ -1,0 +1,228 @@
+/* ---------- Server Watch design tokens ---------- */
+
+/* Inter Variable — SIL Open Font License 1.1 (rsms.me/inter) */
+@font-face {
+  font-family: "Inter";
+  src: url("../assets/fonts/inter-var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  /* background */
+  --bg-0: #04060b;
+  --bg-1: #080c14;
+  --bg-2: #0b111d;
+
+  /* liquid glass */
+  --glass-bg: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.115) 0%,
+    rgba(255, 255, 255, 0.045) 45%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  --glass-bg-strong: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.035) 100%
+  );
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-border-soft: rgba(255, 255, 255, 0.09);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+  --glass-shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.3);
+  --glass-blur: 18px;
+  --glass-saturate: 1.5;
+
+  /* text */
+  --text-primary: rgba(244, 247, 252, 0.96);
+  --text-secondary: rgba(235, 240, 248, 0.6);
+  --text-tertiary: rgba(235, 240, 248, 0.38);
+
+  /* status — quiet, not neon */
+  --status-normal: #7ee2a8;
+  --status-warning: #f2c66d;
+  --status-critical: #f28b82;
+  --accent: #8ab4f8;
+
+  /* radii */
+  --radius-small: 14px;
+  --radius-medium: 22px;
+  --radius-large: 32px;
+  --radius-pill: 999px;
+
+  /* motion */
+  --spring: cubic-bezier(0.32, 1.4, 0.5, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 160ms;
+  --dur-med: 320ms;
+
+  /* safe margins (touchscreen edges can be unreliable) */
+  --safe-x: max(56px, 7vw);
+  --safe-y: max(36px, 6vh);
+
+  font-size: 16px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-0);
+  color: var(--text-primary);
+  font-family: "Inter", "SF Pro Display", "SF Pro Text", "Ubuntu Sans",
+    "Ubuntu", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "tnum" 1, "cv05" 1;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+/* ---------- liquid glass primitives ---------- */
+
+.glass {
+  position: relative;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 0.5px solid var(--glass-border-soft);
+  border-radius: var(--radius-medium);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -0.5px 0 rgba(255, 255, 255, 0.06),
+    var(--glass-shadow);
+  overflow: hidden;
+}
+
+/* inner refraction sheen — a soft diagonal highlight that makes the surface
+   read as curved glass rather than flat frosted plastic */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      120% 90% at 18% 0%,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.04) 34%,
+      transparent 60%
+    ),
+    radial-gradient(
+      140% 120% at 85% 108%,
+      rgba(140, 170, 255, 0.07) 0%,
+      transparent 55%
+    );
+  pointer-events: none;
+}
+
+/* edge light refraction ring */
+.glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.28),
+    rgba(255, 255, 255, 0.05) 30%,
+    transparent 55%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  border-color: var(--glass-border);
+}
+
+.pressable {
+  transition: transform var(--dur-fast) var(--spring),
+    filter var(--dur-fast) var(--ease-out);
+  cursor: pointer;
+}
+.pressable:active {
+  transform: scale(0.965);
+  filter: brightness(1.12);
+}
+
+/* ---------- typography helpers ---------- */
+
+.t-secondary { color: var(--text-secondary); }
+.t-tertiary { color: var(--text-tertiary); }
+.t-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+/* ---------- status colors ---------- */
+
+.c-normal { color: var(--status-normal); }
+.c-warning { color: var(--status-warning); }
+.c-critical { color: var(--status-critical); }
+
+/* ---------- transitions for sheets ---------- */
+
+.sheet-enter-active {
+  transition: opacity var(--dur-med) var(--ease-out), transform var(--dur-med) var(--spring);
+}
+.sheet-leave-active {
+  transition: opacity 200ms ease-in, transform 200ms ease-in;
+}
+.sheet-enter-from,
+.sheet-leave-to {
+  opacity: 0;
+  transform: translateY(26px) scale(0.96);
+}
+
+.fade-enter-active { transition: opacity var(--dur-med) var(--ease-out); }
+.fade-leave-active { transition: opacity 180ms ease-in; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* scrollable areas inside sheets */
+.scroll-y {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.scroll-y::-webkit-scrollbar { width: 4px; }
+.scroll-y::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 2px;
+}
+
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: rgba(24, 30, 42, 0.92);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+      var(--glass-shadow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

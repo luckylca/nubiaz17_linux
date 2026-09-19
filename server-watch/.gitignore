@@ -1,0 +1,9 @@
+# server-watch
+# build artifacts
+/dist/
+/backend/internal/webdist/dist/
+/frontend/node_modules/
+/frontend/dist/
+*.log
+
+/backend/monitor-agent
