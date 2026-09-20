@@ -1,13 +1,16 @@
 # devices.yml entry for Nubia Z17 (nx563j) — to be merged into
-# kali-nethunter-devices/devices.yml (submission via GitLab MR, see
+# kali-nethunter-kernels/devices.yml (submission via GitLab MR, see
 # docs/KALI_NETHUNTER_PORT.md phase K6).
 #
 # features policy: only capabilities verified on real hardware are listed.
-# HID + internal Injection verified on the identical kernel code base
-# (Ubuntu-phase reference platform, same lineage-22.2 tree + these patches);
-# re-verified on Android/NetHunter before the MR. BT_RFCOMM intentionally
-# omitted until the blocked host-side retest passes. External-adapter labels
-# (RTL88XXAU etc.) omitted until OTG hardware arrives.
+# HID-4 + internal QCACLD injection were re-verified on Android/NetHunter
+# on 2026-09-17. BT_RFCOMM was end-to-end verified on 2026-09-20 against
+# a rooted Android peer, including bidirectional RFCOMM payload/ACK traffic.
+# NFS was hardware-verified on NX563J against a macOS NFS server; the current
+# NetHunter kernel also carries NFS v2/v3/v4 client support. External-adapter
+# labels (RTL88XXAU etc.) are omitted until OTG hardware arrives.
+# CDROM was hardware-verified on 2026-09-20: macOS enumerated the configfs
+# mass-storage LUN with cdrom=1 as a real `File-CD Gadget` (0930:6545).
 
 - nx563j:
     model  : Nubia Z17
@@ -15,6 +18,10 @@
       - id     : nx563j-los
         name   : Nubia Z17 (LineageOS 22.2)
         android: fifteen
+        note   : >-
+                 Internal Wi-Fi injection is validated on 5 GHz. 2.4 GHz
+                 injection is currently avoided because the WCN3990 firmware
+                 can assert under that path.
     kernels:
       - id          : nx563j-los
         description : Nubia Z17 for LineageOS
@@ -29,4 +36,4 @@
             description: LineageOS 22.2
             author     : luckylca
             source     : 'git clone https://github.com/luckylca/android_kernel_nubia_msm8998_nethunter -b nethunter-22.2'
-            features   : [HID, Injection, Internal_BT]
+            features   : [BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]

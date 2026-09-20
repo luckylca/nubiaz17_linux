@@ -1,7 +1,7 @@
-# Adapted from kali-nethunter-devices fifteen/oneplus5-los (same msm8998/4.4
+# Adapted from kali-nethunter-kernels fifteen/oneplus5-los (same msm8998/4.4
 # platform, LineageOS 22.2). configfs g1 paths are identical on nx563j.
-# NOTE: rndis modes require kernel GSI/RNDIS (pending CI experiment);
-# they fail harmlessly at mode-switch time if the kernel lacks them.
+# RNDIS/GSI support is present in the verified nx563j NetHunter kernel; configfs
+# gsi.rndis creation was tested successfully on real hardware (2026-09-16).
 #
 # Kali NetHunter init
 
@@ -9,11 +9,14 @@ on init
     export TERMINFO /system/etc/terminfo
     export TERM linux
 
-on boot 
+# NX563J mounts/configures the USB configfs gadget after the generic boot
+# trigger. Create NetHunter functions only once Android has finished booting,
+# otherwise the early mkdir operations race g1 creation and silently fail.
+on property:sys.boot_completed=1
     mkdir /config/usb_gadget/g1/functions/acm.usb0
     mkdir /config/usb_gadget/g1/functions/ecm.usb0
     mkdir /config/usb_gadget/g1/functions/mass_storage.0
-    mkdir /config/usb_gadget/g1/functions/hid.0    
+    mkdir /config/usb_gadget/g1/functions/hid.0
     write /config/usb_gadget/g1/functions/hid.0/protocol "1"
     write /config/usb_gadget/g1/functions/hid.0/subclass "1"
     write /config/usb_gadget/g1/functions/hid.0/report_length "8"
@@ -24,7 +27,7 @@ on boot
     write /config/usb_gadget/g1/functions/hid.1/report_length "4"
     copy /mouse-descriptor.bin /config/usb_gadget/g1/functions/hid.1/report_desc
 
-# USB Attack for OnePlus5
+# USB Attack profiles for NX563J
 
 # -- Against Windows OS -- #
 ### RESET ###
@@ -35,7 +38,7 @@ on property:sys.usb.config=win,reset && property:sys.usb.configfs=1
     rm /config/usb_gadget/g1/configs/b.1/f3
     rm /config/usb_gadget/g1/configs/b.1/f4
     rm /config/usb_gadget/g1/configs/b.1/f5
-    rm /config/usb_gadget/g1/configs/b.1/f6    
+    rm /config/usb_gadget/g1/configs/b.1/f6
     write /config/usb_gadget/g1/idVendor 0x2a70
     write /config/usb_gadget/g1/idProduct 0xf003
     symlink /config/usb_gadget/g1/functions/mtp.gs0 /config/usb_gadget/g1/configs/b.1/f1
@@ -54,7 +57,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,reset,adb && prop
     rm /config/usb_gadget/g1/configs/b.1/f3
     rm /config/usb_gadget/g1/configs/b.1/f4
     rm /config/usb_gadget/g1/configs/b.1/f5
-    rm /config/usb_gadget/g1/configs/b.1/f6    
+    rm /config/usb_gadget/g1/configs/b.1/f6
     write /config/usb_gadget/g1/idVendor 0x2a70
     write /config/usb_gadget/g1/idProduct 0x4ee7
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f1
@@ -80,7 +83,7 @@ on property:sys.usb.config=win,hid && property:sys.usb.configfs=1
 ### HID + adb ###
 on property:sys.usb.config=win,hid,adb && property:sys.usb.configfs=1
     start adbd
-    
+
 on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,hid,adb && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "hid_adb"
     rm /config/usb_gadget/g1/configs/b.1/f1
@@ -90,14 +93,14 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,hid,adb && proper
     rm /config/usb_gadget/g1/configs/b.1/f5
     rm /config/usb_gadget/g1/configs/b.1/f6
     write /config/usb_gadget/g1/idVendor 0x046d
-    write /config/usb_gadget/g1/idProduct 0xc317    
+    write /config/usb_gadget/g1/idProduct 0xc317
     symlink /config/usb_gadget/g1/functions/hid.0 /config/usb_gadget/g1/configs/b.1/f1
     symlink /config/usb_gadget/g1/functions/hid.1 /config/usb_gadget/g1/configs/b.1/f2
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f3
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
 
-### mass_storage only ###    
+### mass_storage only ###
 on property:sys.usb.config=win,mass_storage && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "msc"
     rm /config/usb_gadget/g1/configs/b.1/f1
@@ -132,7 +135,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,mass_storage,adb 
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
 
-### RINDIS only ###    
+### RINDIS only ###
 on property:sys.usb.config=win,rndis && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "rndis"
     rm /config/usb_gadget/g1/configs/b.1/f1
@@ -186,7 +189,7 @@ on property:sys.usb.config=win,hid,mass_storage && property:sys.usb.configfs=1
 ### HID + mass_storage + adb ###
 on property:sys.usb.config=win,hid,mass_storage,adb && property:sys.usb.configfs=1
     start adbd
-    
+
 on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,hid,mass_storage,adb && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "hid_msc_adb"
     rm /config/usb_gadget/g1/configs/b.1/f1
@@ -239,7 +242,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,rndis,mass_storag
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f3
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
-    
+
 ### RNDIS + HID ###
 on property:sys.usb.config=win,rndis,hid && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "rndis_hid"
@@ -277,7 +280,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,rndis,hid,adb && 
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f4
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
-    
+
 ### RNDIS + HID + mass_storage ###
 on property:sys.usb.config=win,rndis,hid,mass_storage && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "rndis_hid_msc"
@@ -317,19 +320,19 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,rndis,hid,mass_st
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f5
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
-    
-# -- End of Windows Part -- #  
+
+# -- End of Windows Part -- #
 
 # -- Against Mac OS -- #
 ### RESET ###
-on property:sys.usb.config=win,reset && property:sys.usb.configfs=1
+on property:sys.usb.config=mac,reset && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "reset"
     rm /config/usb_gadget/g1/configs/b.1/f1
     rm /config/usb_gadget/g1/configs/b.1/f2
     rm /config/usb_gadget/g1/configs/b.1/f3
     rm /config/usb_gadget/g1/configs/b.1/f4
     rm /config/usb_gadget/g1/configs/b.1/f5
-    rm /config/usb_gadget/g1/configs/b.1/f6    
+    rm /config/usb_gadget/g1/configs/b.1/f6
     write /config/usb_gadget/g1/idVendor 0x2a70
     write /config/usb_gadget/g1/idProduct 0xf003
     symlink /config/usb_gadget/g1/functions/mtp.gs0 /config/usb_gadget/g1/configs/b.1/f1
@@ -338,17 +341,17 @@ on property:sys.usb.config=win,reset && property:sys.usb.configfs=1
     setprop sys.usb.state ${sys.usb.config}
 
 ### RESET + adb ###
-on property:sys.usb.config=win,reset,adb && property:sys.usb.configfs=1
+on property:sys.usb.config=mac,reset,adb && property:sys.usb.configfs=1
     start adbd
 
-on property:sys.usb.ffs.ready=1 && property:sys.usb.config=win,reset,adb && property:sys.usb.configfs=1
+on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,reset,adb && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "reset_adb"
     rm /config/usb_gadget/g1/configs/b.1/f1
     rm /config/usb_gadget/g1/configs/b.1/f2
     rm /config/usb_gadget/g1/configs/b.1/f3
     rm /config/usb_gadget/g1/configs/b.1/f4
     rm /config/usb_gadget/g1/configs/b.1/f5
-    rm /config/usb_gadget/g1/configs/b.1/f6    
+    rm /config/usb_gadget/g1/configs/b.1/f6
     write /config/usb_gadget/g1/idVendor 0x2a70
     write /config/usb_gadget/g1/idProduct 0x4ee7
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f1
@@ -374,7 +377,7 @@ on property:sys.usb.config=mac,hid && property:sys.usb.configfs=1
 ### HID + adb ###
 on property:sys.usb.config=mac,hid,adb && property:sys.usb.configfs=1
     start adbd
-    
+
 on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,hid,adb && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "hid_adb"
     rm /config/usb_gadget/g1/configs/b.1/f1
@@ -391,7 +394,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,hid,adb && proper
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
 
-### mass_storage only ###    
+### mass_storage only ###
 on property:sys.usb.config=mac,mass_storage && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "msc"
     rm /config/usb_gadget/g1/configs/b.1/f1
@@ -426,7 +429,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,mass_storage,adb 
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
 
-### ECM only ###    
+### ECM only ###
 on property:sys.usb.config=mac,ecm && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "ecm"
     rm /config/usb_gadget/g1/configs/b.1/f1
@@ -482,7 +485,7 @@ on property:sys.usb.config=mac,hid,mass_storage && property:sys.usb.configfs=1
 ### HID + mass_storage + adb ###
 on property:sys.usb.config=mac,hid,mass_storage,adb && property:sys.usb.configfs=1
     start adbd
-    
+
 on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,hid,mass_storage,adb && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "hid_msc_adb"
     rm /config/usb_gadget/g1/configs/b.1/f1
@@ -491,7 +494,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,hid,mass_storage,
     rm /config/usb_gadget/g1/configs/b.1/f4
     rm /config/usb_gadget/g1/configs/b.1/f5
     rm /config/usb_gadget/g1/configs/b.1/f6
-    write /config/usb_gadget/g1/idVendor 0x05ac 
+    write /config/usb_gadget/g1/idVendor 0x05ac
     write /config/usb_gadget/g1/idProduct 0x0201
     symlink /config/usb_gadget/g1/functions/hid.0 /config/usb_gadget/g1/configs/b.1/f1
     symlink /config/usb_gadget/g1/functions/hid.1 /config/usb_gadget/g1/configs/b.1/f2
@@ -499,7 +502,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,hid,mass_storage,
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f4
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
-    
+
 ### ECM + HID ###
 on property:sys.usb.config=mac,ecm,hid && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "ecm_hid"
@@ -514,7 +517,7 @@ on property:sys.usb.config=mac,ecm,hid && property:sys.usb.configfs=1
     symlink /config/usb_gadget/g1/functions/hid.0 /config/usb_gadget/g1/configs/b.1/f1
     symlink /config/usb_gadget/g1/functions/hid.1 /config/usb_gadget/g1/configs/b.1/f2
     symlink /config/usb_gadget/g1/functions/acm.usb0 /config/usb_gadget/g1/configs/b.1/f3
-    symlink /config/usb_gadget/g1/functions/ecm.usb0 /config/usb_gadget/g1/configs/b.1/f4    
+    symlink /config/usb_gadget/g1/functions/ecm.usb0 /config/usb_gadget/g1/configs/b.1/f4
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
 
@@ -577,7 +580,7 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,ecm,mass_storage,
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f4
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
-    
+
 ### ECM + HID + mass_storage ###
 on property:sys.usb.config=mac,ecm,hid,mass_storage && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "ecm_hid_msc"
@@ -622,5 +625,3 @@ on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mac,ecm,hid,mass_stor
 
  # -- End of Mac's Part -- #
  # -- NetHunter HID END -- #
-
-
