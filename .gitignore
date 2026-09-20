@@ -9,3 +9,7 @@ __pycache__/
 
 # locally built macOS tool binary (source is tracked)
 tools/los-fix/pstore-dec
+
+# Local NetHunter review/test artifacts. Keep them on disk, never in commits.
+kali/upstream/
+nxrfcpriv-ksu.zip
