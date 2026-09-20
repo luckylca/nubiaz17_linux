@@ -2,7 +2,8 @@
 
 努比亚 Z17 (NX563J) 的完整 Ubuntu 24.04 系统快照。这是开发机上验证过的
 稳定版:显示/触控/Wi-Fi/蓝牙/外放/USB gadget SSH/USB HID 键盘鼠标/
-监听模式+注入内核补丁,全部内建。
+监听模式+注入内核补丁,全部内建。Server Watch 全屏服务器监控面板也已预装，
+包含当前打包时仓库中的最新 Full Dashboard UI 与监控 agent。
 
 ## 内容
 
@@ -31,4 +32,5 @@
   服务由 /root/rc.boot.ubuntu 拉起。
 - 关机/重启:`echo b > /proc/sysrq-trigger`(重启)。普通 reboot 命令无效。
 - Wi-Fi/蓝牙桌面:wpagui + blueman。
+- Server Watch: 默认预装并写入系统快照；进入桌面后可从 LXQt quick-launch 单击打开 Full Dashboard。
 - 源码与文档:https://github.com/luckylca/nubiaz17_linux

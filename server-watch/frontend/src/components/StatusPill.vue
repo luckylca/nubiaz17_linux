@@ -6,40 +6,42 @@ defineProps<{
 </script>
 
 <template>
-  <button class="status-pill glass pressable">
+  <button class="status-pill pressable">
     <span class="dot" :class="level"></span>
     <span class="pill-text">{{ text }}</span>
   </button>
 </template>
 
 <style scoped>
+/* Sizes are real device pixels inside the fixed 1920x1080 design space. */
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 26px;
+  gap: 14px;
+  padding: 18px 34px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: var(--radius-pill);
+  background: #0c0c0e;
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 0.78rem;
-  font-weight: 500;
+  font-size: 23px;
+  font-weight: 550;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
+.status-pill:active { background: #1a1a1c; }
 .dot {
-  width: 7px;
-  height: 7px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--status-normal);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--status-normal) 60%, transparent);
 }
 .dot.warning {
   background: var(--status-warning);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--status-warning) 60%, transparent);
 }
 .dot.critical {
   background: var(--status-critical);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--status-critical) 70%, transparent);
 }
 .status-pill.warning { color: var(--status-warning); }
 .status-pill.critical { color: var(--status-critical); }

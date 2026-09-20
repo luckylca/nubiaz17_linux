@@ -4,7 +4,7 @@
 set -e
 
 pkill -f server-watch-agent-run 2>/dev/null || true
-pkill -x server-watch-agent 2>/dev/null || true
+pkill -f "^/usr/local/bin/server-watch-agent$" 2>/dev/null || true
 pkill -f server-watch-kiosk 2>/dev/null || true
 
 for f in /root/rc.boot.ubuntu /root/initramfs/rc.boot.ubuntu; do
@@ -17,6 +17,9 @@ done
 rm -f /usr/local/bin/server-watch-agent \
       /usr/local/bin/server-watch-agent-run \
       /usr/local/bin/server-watch-dashboard \
+      /usr/local/bin/server-watch-webview \
+      /usr/local/bin/server-watch-native \
+      /usr/local/bin/server-watch-fb-kick \
       /usr/local/bin/server-watch-device-check \
       /root/.local/share/applications/server-watch.desktop \
       "/root/Desktop/Server Watch.desktop"

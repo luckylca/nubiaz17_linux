@@ -26,6 +26,14 @@ func NewThermalCollector() *ThermalCollector {
 	return t
 }
 
+// plausibleTemp reports whether a temperature reading is physically
+// plausible for a phone SoC/battery sensor. Readings at or below 5 °C are
+// treated as dead sensors (e.g. Qualcomm LLM/GLM islands that read 0 while
+// their subsystem is asleep) rather than real temperatures.
+func plausibleTemp(c float64) bool {
+	return c > 5 && c < 130
+}
+
 func (t *ThermalCollector) enumerate() {
 	matches, _ := filepath.Glob("/sys/class/thermal/thermal_zone*")
 	for _, z := range matches {
@@ -35,15 +43,11 @@ func (t *ThermalCollector) enumerate() {
 			continue
 		}
 		typ := strings.TrimSpace(string(typB))
-		v, err := strconv.ParseFloat(strings.TrimSpace(string(tempB)), 64)
-		if err != nil {
+		if _, err := strconv.ParseFloat(strings.TrimSpace(string(tempB)), 64); err != nil {
 			continue
 		}
-		c := normalizeTemp(v)
-		// hide clearly broken sensors
-		if c < -40 || c > 150 {
-			continue
-		}
+		// Keep the zone even if currently implausible (a sleeping sensor
+		// may wake up); Sample filters implausible readings.
 		t.zones = append(t.zones, z)
 		t.names = append(t.names, typ)
 	}
@@ -76,17 +80,28 @@ func (t *ThermalCollector) Sample() []ThermalZone {
 			continue
 		}
 		c := normalizeTemp(v)
-		if c < -40 || c > 150 {
-			continue
+		if !plausibleTemp(c) {
+			continue // dead/sleeping sensor — hide rather than show 0°C
 		}
 		out = append(out, ThermalZone{Name: t.names[i], TempC: c})
 	}
 	return out
 }
 
-// SoCTemp picks the most meaningful CPU/SoC temperature.
+// SoCTemp picks the most meaningful CPU/SoC temperature. Zone readings are
+// already filtered for plausibility by Sample.
 func SoCTemp(zones []ThermalZone) (float64, bool) {
-	preferred := []string{"cpu", "soc", "pm8998", "pm8994", "msm", "kryo", "tsens", "thermal"}
+	// exact-name preferences first (msm_therm is the SoC sensor on this
+	// Qualcomm platform), then substring fallbacks.
+	exact := []string{"msm_therm", "soc_therm", "cpu_therm", "kryo_therm", "pm8998_tz", "pm8994_tz"}
+	for _, want := range exact {
+		for _, z := range zones {
+			if strings.EqualFold(z.Name, want) {
+				return z.TempC, true
+			}
+		}
+	}
+	preferred := []string{"cpu", "msm", "kryo", "tsens", "pm8998", "pm8994", "thermal", "soc"}
 	best := -1
 	bestScore := 99
 	for i, z := range zones {
@@ -98,7 +113,7 @@ func SoCTemp(zones []ThermalZone) (float64, bool) {
 		}
 	}
 	if best < 0 && len(zones) > 0 {
-		// fallback: hottest zone
+		// fallback: hottest plausible zone
 		max := 0
 		for i, z := range zones {
 			if z.TempC > zones[max].TempC {

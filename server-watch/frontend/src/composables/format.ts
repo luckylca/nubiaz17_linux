@@ -1,15 +1,26 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
-/** current time, updated every 250ms */
+/** Current time. The UI only renders HH:MM, so wake exactly on minute
+ * boundaries instead of forcing Vue to update four times per second. */
 export function useNow() {
   const now = ref(new Date())
-  let t: number
+  let t: number | undefined
+
+  const schedule = () => {
+    now.value = new Date()
+    const delay = 60_000 - (Date.now() % 60_000) + 30
+    t = window.setTimeout(schedule, delay)
+  }
+  const refresh = () => { now.value = new Date() }
+
   onMounted(() => {
-    t = window.setInterval(() => {
-      now.value = new Date()
-    }, 250)
+    schedule()
+    document.addEventListener('visibilitychange', refresh, { passive: true })
   })
-  onUnmounted(() => clearInterval(t))
+  onUnmounted(() => {
+    if (t !== undefined) clearTimeout(t)
+    document.removeEventListener('visibilitychange', refresh)
+  })
   return now
 }
 

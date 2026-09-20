@@ -30,8 +30,8 @@ type Config struct {
 func Default() *Config {
 	return &Config{
 		Listen:           "127.0.0.1:8765",
-		SampleIntervalMs: 1000,
-		SlowIntervalMs:   10000,
+		SampleIntervalMs: 2000,
+		SlowIntervalMs:   20000,
 		TempWarning:      65,
 		TempCritical:     78,
 		BattTempWarning:  43,

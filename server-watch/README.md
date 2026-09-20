@@ -1,20 +1,20 @@
 # Server Watch for NX563J Ubuntu
 
-Server Watch turns the Nubia Z17/NX563J Ubuntu desktop into a landscape desk clock with an Apple Watch-inspired Liquid Glass monitor. The clock is intentionally the visual focus; CPU, battery, network and Docker are complications that expand into detailed sheets only when touched.
+Server Watch turns the Nubia Z17/NX563J Ubuntu desktop into a landscape desk clock with an Apple Watch-inspired, OLED-first low-overhead interface. The clock is intentionally the visual focus; CPU, battery, network and Docker are quiet complications that expand into detailed sheets only when touched.
 
 ## Current architecture
 
 - **Go agent**: reads `/proc`, `/sys`, Wi-Fi, BlueZ and the Docker Engine Unix socket.
-- **Vue 3 + TypeScript UI**: clock face, Liquid Glass complications, sheets, process view and Docker controls.
+- **Vue 3 + TypeScript UI**: clock face, flat Apple Watch-style complications, sheets, process view and Docker controls.
 - **Transport**: WebSocket snapshots with HTTP fallback.
 - **Binding**: `127.0.0.1:8765` by default; not exposed to the LAN.
 - **NX563J boot model**: this rootfs has no systemd PID 1. The agent is therefore supervised from `rc.boot.ubuntu` by `server-watch-agent-run`, matching the rest of this phone's service model.
-- **Display**: Xorg/fbdev. The design avoids continuous large-area blur animations because this device has CPU-rendered X rather than a normal DRM/GPU desktop stack.
+- **Display**: Xorg/fbdev. The default design uses pure black backgrounds, opaque dark surfaces and no realtime blur/shadow effects because this device has CPU-rendered X rather than a normal DRM/GPU desktop stack.
 
 ## Main interactions
 
 - The center clock is the primary view.
-- Tap CPU, Battery, Network or Docker to open a Liquid Glass detail sheet.
+- Tap CPU, Battery, Network or Docker to open a lightweight dark detail sheet.
 - Tap the center status pill for Overview / Hardware / Processes / Docker / Network / Settings.
 - In dim mode the first touch only wakes the face.
 - Double-tap the **large center clock** to leave kiosk mode and return to LXQt. The background agent remains running.
@@ -54,6 +54,7 @@ Deployment installs:
 - `/usr/local/bin/server-watch-agent`
 - `/usr/local/bin/server-watch-agent-run`
 - `/usr/local/bin/server-watch-dashboard`
+- `/usr/local/bin/server-watch-webview` (the single full-dashboard WebKitGTK UI)
 - `/usr/local/bin/server-watch-device-check`
 - `/etc/server-watch/config.yaml`
 - `/root/.local/share/applications/server-watch.desktop`
@@ -83,8 +84,8 @@ Important keys:
 
 ```yaml
 listen: 127.0.0.1:8765
-sample_interval_ms: 1000
-slow_interval_ms: 10000
+sample_interval_ms: 2000
+slow_interval_ms: 20000
 temp_warning: 65
 temp_critical: 78
 batt_temp_warning: 43

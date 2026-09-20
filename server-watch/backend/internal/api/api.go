@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"server-watch/backend/internal/collect"
@@ -147,7 +148,13 @@ func killKioskBrowser() {
 	if b, err := os.ReadFile("/tmp/server-watch-kiosk.pid"); err == nil {
 		if pid := mustAtoi(string(b)); pid > 1 && strconv.Itoa(pid) != self && isKioskProcess(pid) {
 			if p, err := os.FindProcess(pid); err == nil {
-				if p.Kill() == nil {
+				// Graceful SIGTERM lets GTK/WebKit unwind and lets the launcher
+				// regain control so it can repaint/kick the fbdev desktop.
+				if p.Signal(syscall.SIGTERM) == nil {
+					time.Sleep(700 * time.Millisecond)
+					if isKioskProcess(pid) {
+						_ = p.Kill() // bounded fallback for a wedged browser
+					}
 					_ = os.Remove("/tmp/server-watch-kiosk.pid")
 					return
 				}
@@ -176,7 +183,8 @@ func isKioskProcess(pid int) bool {
 		return false
 	}
 	cmd := strings.ReplaceAll(string(b), "\x00", " ")
-	return strings.Contains(cmd, "server-watch-kiosk") ||
+	return strings.Contains(cmd, "server-watch-webview") ||
+		strings.Contains(cmd, "server-watch-kiosk") ||
 		strings.Contains(cmd, "server-watch-kiosk-profile") ||
 		strings.Contains(cmd, "server-watch-dashboard")
 }
@@ -186,9 +194,9 @@ func mustAtoi(s string) int {
 	return i
 }
 
-// Broadcaster pushes snapshots at 1 Hz while clients are connected.
+// Broadcaster pushes snapshots every two seconds while clients are connected.
 func (s *Server) Broadcaster(ctx context.Context) {
-	t := time.NewTicker(1 * time.Second)
+	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
 	for {
 		select {

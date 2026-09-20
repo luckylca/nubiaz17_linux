@@ -8,6 +8,9 @@
 #   userdata.img.gz <- ext4 image of the WHOLE userdata fs (Alpine base +
 #                      /ubuntu + /boot-target), built on-device with
 #                      mkfs.ext4 + loop + tar, gzip-streamed back
+#   Server Watch    <- current server-watch source is built + installed on
+#                      the phone BEFORE the snapshot, so the default package
+#                      always contains the latest Full Dashboard UI + agent
 #   flash.sh / README.md / img2simg.py  <- scripts/dist/, tools/simg/
 #   MANIFEST.txt    <- versions, hashes, dpkg list
 #
@@ -29,10 +32,19 @@ DEV_BUILD=/root/dist-build        # on userdata: <rootfs>/ubuntu/root/dist-build
 [[ -f "$BOOTIMG" ]] || { echo "missing $BOOTIMG" >&2; exit 1; }
 command -v ssh >/dev/null
 
-echo "[1/7] device reachable?"
+echo "[1/8] device reachable?"
 $SSH "echo ok: \$(uname -r)" || { echo "device unreachable" >&2; exit 1; }
 
-echo "[2/7] verify running boot partition == $(basename "$BOOTIMG")"
+echo "[2/8] install current Server Watch into live rootfs"
+SERVER_WATCH_DIR="$ROOT/server-watch"
+[[ -x "$SERVER_WATCH_DIR/scripts/deploy.sh" ]] || {
+  echo "missing Server Watch deploy script: $SERVER_WATCH_DIR/scripts/deploy.sh" >&2
+  exit 1
+}
+PHONE=10.42.0.1 KEY="$ROOT/work/nx563j_key" \
+  "$SERVER_WATCH_DIR/scripts/deploy.sh"
+
+echo "[3/8] verify running boot partition == $(basename "$BOOTIMG")"
 IMG_SIZE=$(stat -f%z "$BOOTIMG" 2>/dev/null || stat -c%s "$BOOTIMG")
 # Partition-truncated hash convention (RESEARCH.md): the tail <512 bytes of
 # the signed image can differ from partition residue, so both sides hash
@@ -49,7 +61,7 @@ echo "    dev $DEV_SHA"
 mkdir -p "$DEST"
 cp "$BOOTIMG" "$DEST/boot.img"
 
-echo "[3/7] build userdata ext4 image on device"
+echo "[4/8] build userdata ext4 image on device"
 # userdata root = Alpine base + /ubuntu + /boot-target + ~20GB legacy
 # Android /data junk (app/data/media/dalvik-cache/...). Package only what
 # the boot chain needs — include list, not exclude list.
@@ -90,16 +102,16 @@ $SSH "set -e
   sync; umount /mnt/dist-img
   echo IMAGE_BUILT"
 
-echo "[4/7] stream image back (gzip) — this takes a while"
+echo "[5/8] stream image back (gzip) — this takes a while"
 $SSH "gzip -1 < $DEV_BUILD/userdata.img" > "$DEST/userdata.img.gz"
 $SSH "rm -rf $DEV_BUILD"
 ls -lh "$DEST/userdata.img.gz"
 
-echo "[5/7] package scripts"
+echo "[6/8] package scripts"
 cp "$ROOT/scripts/dist/flash.sh" "$ROOT/scripts/dist/README.md" "$DEST/"
 cp "$ROOT/tools/simg/img2simg.py" "$DEST/"
 
-echo "[6/7] manifest"
+echo "[7/8] manifest"
 {
   echo "nx563j-ubuntu-$VER"
   echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -107,6 +119,8 @@ echo "[6/7] manifest"
   echo "boot.img sha256 (full): $(shasum -a 256 "$BOOTIMG" | awk '{print $1}')"
   echo "boot.img sha256 (512-trunc, = running partition): $IMG_SHA"
   echo "userdata.img.gz sha256: $(shasum -a 256 "$DEST/userdata.img.gz" | awk '{print $1}')"
+  echo "server-watch: bundled from current source before snapshot"
+  echo "server-watch source commit: $(git -C "$ROOT" rev-parse HEAD)"
   echo "userdata payload: ${STREAM_MB}MB (of ~30GB used; legacy Android /data excluded), image: ${IMG_MB}MB"
   echo "excluded by design: Android /data legacy (app,data,media,dalvik-cache,...),"
   echo "  /ubuntu/system+apex+fwimage (runtime re-staged from sde10), logs, caches;"
@@ -115,7 +129,7 @@ echo "[6/7] manifest"
 $SSH "chroot /proc/1/root/mnt/rootfs/ubuntu dpkg -l 2>/dev/null || dpkg -l" \
   > "$DEST/MANIFEST-dpkg.txt" || true
 
-echo "[7/7] tarball"
+echo "[8/8] tarball"
 tar -C "$ROOT/work/dist" -czf "$ROOT/work/dist/nx563j-ubuntu-$VER.tar.gz" "nx563j-ubuntu-$VER"
 ls -lh "$ROOT/work/dist/nx563j-ubuntu-$VER.tar.gz"
 

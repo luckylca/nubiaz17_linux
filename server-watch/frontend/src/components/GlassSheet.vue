@@ -46,9 +46,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(2, 4, 8, 0.45);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.78);
   padding: 4vh var(--safe-x);
 }
 .sheet {

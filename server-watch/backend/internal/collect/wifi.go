@@ -37,23 +37,57 @@ func NewWifiCollector(preferredIface string) *WifiCollector {
 	return w
 }
 
+// findWifiIface enumerates wireless interfaces and picks the one that
+// actually carries traffic: the default-route interface first, otherwise
+// the first non-p2p wireless interface that is up.
 func (w *WifiCollector) findWifiIface() string {
 	entries, err := os.ReadDir("/sys/class/net")
 	if err != nil {
 		return ""
 	}
+	isWireless := func(name string) bool {
+		if strings.HasPrefix(name, "p2p") {
+			return false
+		}
+		base := filepath.Join("/sys/class/net", name)
+		if st, err := os.Stat(filepath.Join(base, "wireless")); err == nil && st.IsDir() {
+			return true
+		}
+		if st, err := os.Stat(filepath.Join(base, "phy80211")); err == nil && st.IsDir() {
+			return true
+		}
+		return false
+	}
+	var wireless []string
 	for _, e := range entries {
-		if st, err := os.Stat(filepath.Join("/sys/class/net", e.Name(), "wireless")); err == nil && st.IsDir() {
-			return e.Name()
+		if isWireless(e.Name()) {
+			wireless = append(wireless, e.Name())
 		}
 	}
-	// qcacld style: /sys/class/net/wlan0/phy80211
-	for _, e := range entries {
-		if st, err := os.Stat(filepath.Join("/sys/class/net", e.Name(), "phy80211")); err == nil && st.IsDir() {
-			return e.Name()
+	if len(wireless) == 0 {
+		return ""
+	}
+	// prefer the interface holding the default route
+	if data, err := os.ReadFile("/proc/net/route"); err == nil {
+		for _, line := range strings.Split(string(data), "\n")[1:] {
+			f := strings.Fields(line)
+			if len(f) >= 2 && f[1] == "00000000" {
+				for _, name := range wireless {
+					if name == f[0] {
+						return name
+					}
+				}
+			}
 		}
 	}
-	return ""
+	// else first one that is up
+	for _, name := range wireless {
+		if b, err := os.ReadFile("/sys/class/net/" + name + "/operstate"); err == nil &&
+			strings.TrimSpace(string(b)) == "up" {
+			return name
+		}
+	}
+	return wireless[0]
 }
 
 // wpaRequest sends one command to the wpa_supplicant control interface.

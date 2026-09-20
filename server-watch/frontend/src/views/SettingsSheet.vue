@@ -58,12 +58,6 @@ async function save() {
     <div v-if="!cfg" class="t-secondary" style="text-align:center; padding: 30px 0">Loading…</div>
     <div v-else class="settings">
       <div class="setting-row">
-        <span class="setting-label">Night mode (auto dim)</span>
-        <button class="toggle pressable" :class="{ on: cfg.night_mode }" @click="cfg.night_mode = !cfg.night_mode">
-          <span class="knob"></span>
-        </button>
-      </div>
-      <div class="setting-row">
         <span class="setting-label">Burn-in protection</span>
         <button class="toggle pressable" :class="{ on: cfg.burnin_protection }" @click="cfg.burnin_protection = !cfg.burnin_protection">
           <span class="knob"></span>
@@ -82,10 +76,6 @@ async function save() {
         </button>
       </div>
 
-      <div class="setting-row">
-        <span class="setting-label">Dim timeout (s)</span>
-        <input v-model.number="cfg.dim_timeout_sec" type="number" class="num" min="15" max="3600" />
-      </div>
       <div class="setting-row">
         <span class="setting-label">Temp warning (°C)</span>
         <input v-model.number="cfg.temp_warning" type="number" class="num" min="40" max="100" />
@@ -133,7 +123,6 @@ async function save() {
   border: 0.5px solid var(--glass-border-soft);
   background: rgba(255, 255, 255, 0.07);
   position: relative;
-  transition: background var(--dur-fast);
 }
 .toggle.on { background: rgba(138, 180, 248, 0.35); }
 .knob {
@@ -142,7 +131,6 @@ async function save() {
   width: 28px; height: 28px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.85);
-  transition: transform var(--dur-med) var(--spring);
 }
 .toggle.on .knob { transform: translateX(26px); }
 .num {

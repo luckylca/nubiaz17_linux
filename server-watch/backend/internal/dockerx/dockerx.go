@@ -124,8 +124,9 @@ type rawContainer struct {
 
 type rawInspect struct {
 	State struct {
-		StartedAt string `json:"StartedAt"`
-		ExitCode  int    `json:"ExitCode"`
+		StartedAt  string `json:"StartedAt"`
+		FinishedAt string `json:"FinishedAt"`
+		ExitCode   int    `json:"ExitCode"`
 		Health    struct {
 			Status string `json:"Status"`
 		} `json:"Health"`
@@ -147,11 +148,17 @@ func (c *Client) ListContainers() ([]ContainerSummary, error) {
 			Image: rc.Image,
 			State: rc.State,
 		}
-		// split health out of Status ("Up 2 hours (healthy)")
+		// split health out of Status ("Up 2 hours (healthy)").
+		// Only treat the parenthesised part as health when it is a known
+		// health word — "Exited (0) 3 days ago" is NOT health.
 		status := rc.Status
 		if i := strings.Index(status, "("); i > 0 {
-			cs.Health = strings.TrimSuffix(strings.TrimSpace(status[i+1:]), ")")
-			status = strings.TrimSpace(status[:i])
+			inner := strings.TrimSuffix(strings.TrimSpace(status[i+1:]), ")")
+			switch inner {
+			case "healthy", "unhealthy", "starting":
+				cs.Health = inner
+				status = strings.TrimSpace(status[:i])
+			}
 		}
 		cs.Status = status
 		for _, p := range rc.Ports {
@@ -167,7 +174,7 @@ func (c *Client) ListContainers() ([]ContainerSummary, error) {
 }
 
 // Inspect fills started time and restart count.
-func (c *Client) Inspect(id string) (started int64, restarts int, health string, exitCode int, err error) {
+func (c *Client) Inspect(id string) (started, finished int64, restarts int, health string, exitCode int, err error) {
 	var ri rawInspect
 	if err = c.get("/containers/"+id+"/json", &ri); err != nil {
 		return
@@ -175,8 +182,11 @@ func (c *Client) Inspect(id string) (started int64, restarts int, health string,
 	restarts = ri.RestartCount
 	health = ri.State.Health.Status
 	exitCode = ri.State.ExitCode
-	if t, terr := time.Parse(time.RFC3339Nano, ri.State.StartedAt); terr == nil {
+	if t, terr := time.Parse(time.RFC3339Nano, ri.State.StartedAt); terr == nil && t.Unix() > 0 {
 		started = t.Unix()
+	}
+	if t, terr := time.Parse(time.RFC3339Nano, ri.State.FinishedAt); terr == nil && t.Unix() > 0 {
+		finished = t.Unix()
 	}
 	return
 }

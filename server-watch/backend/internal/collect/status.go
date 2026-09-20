@@ -2,6 +2,7 @@ package collect
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"server-watch/backend/internal/config"
@@ -70,6 +71,9 @@ func Evaluate(cfg *config.Config, cpu *CPUStat, socTemp float64, hasTemp bool,
 		add("Memory", fmt.Sprintf("%.0f%% used", mem.UsedPercent), Warning)
 	}
 	for _, s := range storage {
+		if !actionableMount(s.Mount) {
+			continue // firmware/vendor/ROM partitions are informational only
+		}
 		if s.UsedPct >= cfg.StorageWarning {
 			add("Storage", fmt.Sprintf("%s %.0f%% full", s.Mount, s.UsedPct), Warning)
 		}
@@ -85,6 +89,21 @@ func Evaluate(cfg *config.Config, cpu *CPUStat, socTemp float64, hasTemp bool,
 		}
 	}
 	return SystemStatus{Level: level.String(), Issues: issues}
+}
+
+// actionableMount reports whether a storage mount is something the user can
+// actually act on. Vendor/firmware/boot partitions are fixed-size ROM-style
+// mounts whose fill level is a property of the factory image, not usage.
+func actionableMount(m string) bool {
+	if m == "/" {
+		return true
+	}
+	for _, p := range []string{"/home", "/data", "/srv", "/opt", "/var", "/root"} {
+		if m == p || strings.HasPrefix(m, p+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // Ring is a fixed-size float history buffer.

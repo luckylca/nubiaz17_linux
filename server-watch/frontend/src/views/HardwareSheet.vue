@@ -80,8 +80,7 @@ const mem = computed(() => store.snap?.memory)
 .meter-fill {
   height: 100%;
   border-radius: 3px;
-  background: linear-gradient(90deg, rgba(138, 180, 248, 0.5), rgba(138, 180, 248, 0.9));
-  transition: width 600ms var(--ease-out);
+  background: var(--accent);
 }
 .disk-sub { font-size: 0.75rem; padding-top: 6px; }
 </style>

@@ -109,8 +109,7 @@ const root = computed(() => store.snap?.storage?.find((s) => s.mount === '/'))
 .meter-fill {
   height: 100%;
   border-radius: 3px;
-  background: linear-gradient(90deg, rgba(138, 180, 248, 0.5), rgba(138, 180, 248, 0.9));
-  transition: width 600ms var(--ease-out);
+  background: var(--accent);
 }
 .thermals { padding-top: 16px; }
 .thermal-chips {

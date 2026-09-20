@@ -32,7 +32,14 @@ const fillPoints = computed(() =>
 </script>
 
 <template>
-  <svg :width="width" :height="height" class="sparkline" :viewBox="`0 0 ${width} ${height}`">
+  <svg
+    :width="width"
+    :height="height"
+    class="sparkline"
+    :viewBox="`0 0 ${width} ${height}`"
+    preserveAspectRatio="none"
+    :style="{ height: height + 'px' }"
+  >
     <defs>
       <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" :stop-color="color" stop-opacity="0.28" />
@@ -56,6 +63,5 @@ const fillPoints = computed(() =>
 .sparkline {
   display: block;
   width: 100%;
-  height: auto;
 }
 </style>

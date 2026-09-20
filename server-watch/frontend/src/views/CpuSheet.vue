@@ -96,8 +96,7 @@ const history = computed(() => store.snap?.history?.cpu ?? [])
 .core-fill {
   height: 100%;
   border-radius: 3px;
-  background: linear-gradient(90deg, rgba(138, 180, 248, 0.5), rgba(138, 180, 248, 0.9));
-  transition: width 600ms var(--ease-out);
+  background: var(--accent);
 }
 .core-pct { width: 44px; text-align: right; font-size: 0.82rem; color: var(--text-secondary); }
 .fact-grid {

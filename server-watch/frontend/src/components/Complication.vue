@@ -30,6 +30,14 @@ defineProps<{
   font-family: inherit;
   text-align: left;
 }
+.complication {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.complication:active {
+  background: #1c1c1e;
+}
 .comp-primary {
   font-size: 1.42rem;
   font-weight: 400;

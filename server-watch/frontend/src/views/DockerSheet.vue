@@ -235,9 +235,9 @@ const now = Math.floor(Date.now() / 1000)
   flex-shrink: 0;
 }
 .state-dot.lg { width: 12px; height: 12px; }
-.state-dot.running { background: var(--status-normal); box-shadow: 0 0 8px rgba(126, 226, 168, 0.5); }
-.state-dot.warning { background: var(--status-warning); box-shadow: 0 0 8px rgba(242, 198, 109, 0.5); }
-.state-dot.critical { background: var(--status-critical); box-shadow: 0 0 8px rgba(242, 139, 130, 0.5); }
+.state-dot.running { background: var(--status-normal); }
+.state-dot.warning { background: var(--status-warning); }
+.state-dot.critical { background: var(--status-critical); }
 .state-dot.stopped { background: rgba(255, 255, 255, 0.22); }
 
 .back-btn {

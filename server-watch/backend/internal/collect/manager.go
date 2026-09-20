@@ -147,7 +147,7 @@ func (m *Manager) Run(ctx context.Context) {
 	}()
 	go func() {
 		m.sampleDockerStats()
-		t := time.NewTicker(5 * time.Second)
+		t := time.NewTicker(15 * time.Second)
 		defer t.Stop()
 		for {
 			select {
@@ -267,7 +267,7 @@ func (m *Manager) sampleDockerList() {
 	running := 0
 	for i := range containers {
 		c := &containers[i]
-		started, restarts, health, exitCode, err := m.docker.Inspect(c.ID)
+		started, finished, restarts, health, exitCode, err := m.docker.Inspect(c.ID)
 		if err == nil {
 			c.Started = started
 			c.Restarts = restarts
@@ -281,7 +281,10 @@ func (m *Manager) sampleDockerList() {
 				})
 			}
 			m.prevRestarts[c.ID] = restarts
-			if c.State == "exited" && exitCode != 0 {
+			// only flag unexpected exits that happened recently —
+			// containers that died days ago and stayed dead are not news
+			if c.State == "exited" && exitCode != 0 &&
+				finished > 0 && time.Since(time.Unix(finished, 0)) < 15*time.Minute {
 				issues = append(issues, Issue{
 					Component: "Docker", Detail: c.Name + " exited unexpectedly",
 					Severity: Warning.String(), sev: Warning,
