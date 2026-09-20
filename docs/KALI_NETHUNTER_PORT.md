@@ -4,12 +4,11 @@
 > 起点优势：我们的 Ubuntu 内核已基于 **LineageOS 官方同源同分支**
 > (LineageOS/android_kernel_nubia_msm8998 @ lineage-22.2, cda6a278) 构建，
 > 全部 12 个 downstream 补丁直接落在官方内核树上。
-> 状态：2026-09-16 立项（用户拍板：Ubuntu 侧研究收尾，正式转 Kali 适配）。
+> 状态：K1-K5 已完成并真机验证；当前剩余 K6 官方上游提交，以及可选能力扩展。2026-09-20 已完成 NetHunter Docker runtime + slirp4netns 用户态 uplink 数据面真机 E2E；真实容器 Internet 仍待宿主联网后复测。测试后设备已逐字节恢复到稳定 Android/NetHunter boot（SHA256 `3c47a780…98fe`）。
 
 ## 官方要求（调研结论，2026-09-16）
 
-来源：kali-nethunter-devices README + devices.yml（gitlab.com/kalilinux/
-nethunter/build-scripts/kali-nethunter-devices，本地克隆 /tmp/knd）。
+来源：Kali NetHunter 官方 kernel/device 仓库 README + devices.yml。当前官方仓库名为 `kali-nethunter-kernels`（gitlab.com/kalilinux/nethunter/build-scripts/kali-nethunter-kernels）；早期研究时本地克隆曾使用 `/tmp/knd`。
 
 - **设备条目**：`devices.yml` 加 `- nx563j:`，kernels 里加 `nx563j-los`
   （LineageOS ROM 后缀约定 -los），注明 android: fifteen、linux: 4.04、
@@ -20,9 +19,7 @@ nethunter/build-scripts/kali-nethunter-devices，本地克隆 /tmp/knd）。
   `<android>/<kernel-id>/` = `fifteen/nx563j-los/`。
   安装器（kali-nethunter-installer 的 boot-patcher）解包设备当前 boot.img、
   换内核、合并 ramdisk 增补——AnyKernel 思路，不需要我们出整 boot.img。
-- **内核源码仓库**：公开、可复现构建，devices.yml 的 source 字段指向它
-  （网页展示用）。目标仓库：
-  `github.com/luckylca/android_kernel_nubia_msm8998_nethunter`（待建）。
+- **内核源码仓库**：公开、可复现构建，devices.yml 的 source 字段指向它（网页展示用）。仓库已建立：`github.com/luckylca/android_kernel_nubia_msm8998_nethunter`，分支 `nethunter-22.2`。
 - **构建工具**：kali-nethunter-kernel-builder（/tmp/kb2）提供 4.04 补丁集
   与 AnyKernel3 打包；我们的 CI 已有等价流水线（build-downstream.yml，
   固定 commit + defconfig + fragment + patches/downstream）。
@@ -34,12 +31,13 @@ nethunter/build-scripts/kali-nethunter-devices，本地克隆 /tmp/knd）。
 
 | feature 标签 | 我们的状态 | 来源 |
 |---|---|---|
-| HID | 内核 CONFIG_USB_CONFIGFS_F_HID=y 已验证（Phase 4 PASS，主机实收） | 运行中内核 zcat config.gz |
-| Injection | 内置 WCN3990：自研 qcacld-3.0 monitor+helper-vdev 注入补丁（0009），host-side PASS | patches/downstream/0009 |
+| HID-4 | 4.4 内核 configfs gadget + CONFIG_USB_CONFIGFS_F_HID=y 已验证（主机实收） | 官方 README：4.x+ 使用 HID-4 标签；运行中内核 zcat config.gz |
+| Injection / QCACLD | 内置 WCN3990：自研 qcacld-3.0 monitor+helper-vdev 注入补丁（0009），5GHz host-side PASS | patches/downstream/0009 |
 | RTL88XXAU | 未集成（out-of-tree aircrack 源码，kernel-builder 有 4.04 补丁可移植） | 待做，标 kernel-side staged |
 | RTL8188EUS/RTL8XXXU | in-tree rtl8xxxu 已 =y（Phase 5 kernel-side PASS） | config fragment |
 | Internal_BT | WCN3990 HCIUART 已 =y，raw HCI PASS | config fragment |
-| BT_RFCOMM | RFCOMM/BNEP 已 =y（host 侧 Mac 待重启复测） | config fragment |
+| BT_RFCOMM | RFCOMM/BNEP 已 =y；2026-09-20 以 MIX Flip 为对端完成自动配对、RFCOMM 双向 payload/ACK，BNEP/PAN 亦完成真实链路与单向 ICMP 数据验证 | config fragment + Android 双机实测 |
+| Docker | Docker-test kernel + Docker 29.1.3/containerd 1.7.35 已完成真机 runtime E2E：run/exec/mqueue/bind/cgroup/bridge/private-netns port publish/cleanup PASS；并已用 slirp4netns 将私有 Docker netns 接到 Android host netns，容器→宿主 HTTP 数据面 PASS 且 Android 全局 Docker 相关 iptables 规则不变。测试时宿主无外网默认路由，因此真实容器 Internet 尚未实收 | `tools/docker/nethunter-docker-ns.sh` + `test-nethunter-docker-e2e.sh` + `install-nethunter-slirp.sh`；首版 MR 暂不声明该 feature |
 
 ## 移植阶段
 
@@ -64,15 +62,14 @@ nethunter/build-scripts/kali-nethunter-devices，本地克隆 /tmp/knd）。
 
 ### K3. devices 仓库条目 + ramdisk ✅（本地备好，2026-09-16）
 - 条目草稿：`kali/devices.yml.nx563j`（nx563j/nx563j-los；features 只标
-  真机已验证的 [HID, Injection, Internal_BT]，BT_RFCOMM 待 Mac 重启复测、
-  外置网卡类待 OTG 硬件）
+  真机已验证且符合当前官方 README 命名的 [BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]；外置网卡类待 OTG 硬件）
 - ramdisk 备好：`kali/fifteen/nx563j-los/ramdisk/`（init.nethunter.rc
   改自 oneplus5-los——同 msm8998/4.4 平台 configfs g1 路径一致；
   HID 键盘/鼠标描述符用 r8q-oui 的标准 boot 描述符，oneplus5-los 里的
   是 0 字节占位）
 - boot 分区 by-name 路径已真机核实：/dev/block/bootdevice/by-name/boot
   → /dev/sde18（非 A/B 槽位设备，slot_device: 0）
-- Image.gz-dtb 用 K2 CI 产物；提交官方需 GitLab 账号 + MR（待用户确认）
+- `Image.gz-dtb` 已从 K2 CI 归档产物复制到 `kali/fifteen/nx563j-los/Image.gz-dtb`，sha256=`2038303df80404048427a24ea24b8f3b7909914dce8a38ba48cc8bc38d7986a4`；与已真机安装的 kernel ZIP 内核逐字节一致
 
 ### K4. 安装器 zip 构建 ✅ 2026-09-16
 - 用官方 kali-nethunter-installer build.py（用户已批准运行）+ 我们的
@@ -116,6 +113,8 @@ full chroot 全部真机运行。** 全部证据如下。
 | Wi-Fi 注入（5GHz ch36） | ✅ host-side | con_mode 0→4，python3(chroot) 发 20/20 probe-req，dmesg `mon-inject: helper vdev 4 ... on 5180 MHz`/`first frame submitted`，无 FW assert；恢复等 helper vdev destroyed 后 con_mode→0，Wi-Fi 服务回启用，全周期干净 |
 | HID | ✅ 主机实收 | 枚举：Mac 实见 "HID Keyboard" 0x1d6b:0x0104（须先 setprop sys.usb.config none 防 UsbDeviceManager 抢回 UDC）；按键：mknod /dev/hidg0 后 chroot hid-type.py 打 8 轮 "NX563J HID TEST"，Mac 文本框逐字实收（2026-09-17，用户在场确认） |
 | 蓝牙 | ✅ | svc bluetooth enable → adapter ON（"Nubia Z17"） |
+| USB Arsenal profiles | ✅ 主机实收（2026-09-20） | boot-integrated `init.nethunter.rc`：`win,hid,adb`→macOS `046d:c317` 且 `hid.0+hid.1+ffs.adb`；`win,rndis,adb`→`0525:a4a3`、`rndis0`、`RNDIS_IPA NetDev was initialized`；修正后的 `mac,reset`→`2a70:f003`；`mac,reset,adb`→`2a70:4ee7` 且 ADB 恢复 |
+| BT RFCOMM/BNEP | ✅ 双机实收（2026-09-20） | 对端 Xiaomi MIX Flip：双方自动确认配对到 `BOND_STATE_BONDED`；RFCOMM 实发 `NX563J_RFCOMM_TEST`，对端实收并回 `MIXFLIP_ACK:NX563J_RFCOMM_TEST`，两端 `CLIENT_PASS/SERVER_PASS`；PAN/BNEP 双方 `bt-pan UP,LOWER_UP`，TX/RX 计数严格互相对应，临时测试 IP 下 MIX→NX ping 3/3、0% loss（反向 ICMP 被 Android tether/firewall 策略过滤） |
 | Wi-Fi STA 回归 | ✅ | 自研内核下日常上网正常：-33dBm / 866.7Mbit/s / generate_204 通过（2026-09-17） |
 
 #### 踩坑实录（重要教训）
@@ -147,15 +146,23 @@ full chroot 全部真机运行。** 全部证据如下。
   此类 bootloader USB 怪癖，建议 USB 2.0 口/Hub）。
 
 #### 回退路径
-- 回 Ubuntu：work/dist/nx563j-ubuntu-20260915 一键包。
+- 回 Ubuntu：`work/dist/nx563j-ubuntu-20260919.tar.gz` 一键包（已内置 Server Watch；解压后运行 `bash flash.sh`）。
 - 回 Kali（刷走之前已做状态备份，2026-09-18）：
   `work/kali-state-backup-20260918/`——含 boot 分区整盘 dump
   （Magisk+NH 内核精确状态，sha256 a25ad3c1…）、已修复 busybox 的
   nethunter 模块包、nh_files、全部验证脚本、magisk.db；README 里有
   快速路（10 分钟）/完整路（五步法）两种恢复流程。
 
-### K6. 上游提交
-- GitLab MR 到 kali-nethunter-devices（devices.yml + fifteen/nx563j-los/）
+### K6. 上游提交 ⏳ 预提交完善中
+- GitLab MR 目标为当前官方 `kali-nethunter-kernels`：合并 `kali/devices.yml.nx563j` 到上游 `devices.yml`，并提交完整 `fifteen/nx563j-los/`（`Image.gz-dtb` + `ak_patches/01-nx563j-magisk-sar-ramdisk.sh` + ramdisk）
+- MR 候选树已完整；`kali/validate_submission.sh` 会校验 kernel SHA、已测试 ZIP 一致性、HID descriptors、ramdisk 功能内容、YAML 与公开 source branch
+- 2026-09-20 重新核对当前 GitLab upstream `main`：remote HEAD=`e5991aa941188697e56c526c1dbc9979afa2db28`，与本地 upstream metadata cache 一致。把最终候选（含 `BT_RFCOMM`）合并进完整 upstream `devices.yml` 后，官方 `.yamllint.yml` PASS；按 upstream Git tree 精确 materialize 目录骨架后运行官方 `bin/devices-integrity.py` PASS（`Kernels in directories: 271` / `Kernels in YAML kernels: 271`）。
+- 已用 2026-09-19 当前官方 `kali-nethunter-installer` main 对候选树重新执行 kernel-only `--installer` 构建。当前 devices feature 标签经 2026-09-20 真机补测、CDROM 主机实收与既有 NFS 真机验证更新为 `[BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]`；feature 元数据不进入 kernel-only ZIP，因此当前 pre-MR 验证包仍为 `artifacts/kali/kernel-nethunter-20260919_205420-nx563j-los-fifteen-pre-mr.zip`，sha256=`4f9b33dc87ca3080d0c30f4ebbc2ee9f37154fa009998b5742950de3f1400c23`；该包中的 kernel、rc 与两个 HID descriptor 均与当前 MR 候选逐字节一致。此包目前属于 pre-MR 构建验证件，真机验证基线仍是 2026-09-16 包
+- 2026-09-19 校验：候选 `Image.gz-dtb` 与 CI 归档及已真机安装的 kernel ZIP 均为 sha256 `2038303d…`; source branch `nethunter-22.2` 当前头 `e840cb1b`，相对构建 commit `a5fee84d` 仅修改 `NETHUNTER.md`，无 kernel/config 变化
+- 预提交审计发现并修正 ramdisk 模板中的 3 个重复 USB trigger：Mac RESET / RESET+ADB 段误写成 `win,reset*`，现已改为 `mac,reset*`；validator 只允许这 3 个已审阅功能差异，其余可执行 rc 必须与真机测试 ZIP 一致
+- 2026-09-20 两个原阻塞项均完成真机闭环：运行中 boot 已确认加载候选 `overlay.d/init.nethunter.rc`，USB Arsenal 的 HID+ADB、RNDIS+ADB、`mac,reset`、`mac,reset,adb` 均在 Mac 主机实际枚举通过；蓝牙以 rooted Xiaomi MIX Flip 为第二对端完成自动 bond、RFCOMM 双向 payload/ACK，进一步完成 PAN/BNEP `STATE_CONNECTED`、双方 `bt-pan LOWER_UP`、镜像 TX/RX 计数及 MIX→NX 3/3 ICMP。临时 privileged 测试模块/APK 已从两台设备清理并重启回归，基础蓝牙仍为 ON。`BT_RFCOMM` 因此正式进入 devices feature 列表；BNEP 作为补充证据记录，不新增上游不存在的 feature 标签。
+- 2026-09-20 `CDROM` 也完成真机闭环：当前 configfs `mass_storage.0/lun.0` 写入 `cdrom=1`、`ro=1` 并挂载测试 ISO 后，macOS 实际枚举为 `File-CD Gadget`（VID/PID `0930:6545`，BSD `disk4`）；watchdog 随后自动恢复到 `mac,reset,adb`，ADB/设备状态正常。因此 `CDROM` 正式进入 devices feature 列表。
+- 另有**独立 future-support 实验**，不混入首版官方 MR：`config/downstream-nethunter-future.fragment` 新增 VCAN/SLCAN、CDC ACM、CH341/CP210X/FTDI/PL2303 与 RNDIS-host。GitHub Actions run `35484288726` 全量 kernel 构建 PASS（future Image SHA256=`f18ab1ee…`）并完成真机刷测：VCAN CAN_RAW `0x563/NX563J` 回环 PASS；SLCAN 用 PTY 模拟 LAWICEL 适配器完成 CAN↔ASCII 双向 PASS；USB 串口四类 driver 与 `rndis_host` 均在 sysfs 注册。测试后 boot 分区已精确恢复到刷测前 SHA256=`3c47a780…`；真实 gs_usb/USB 串口硬件仍未声明官方 feature。
 - 维护者义务：跟随 LineageOS 22.2 nightly 内核更新重建
 
 ## 风险与注意

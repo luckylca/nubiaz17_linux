@@ -15,15 +15,47 @@
 | 4 | USB HID 键盘/鼠标/复合 | ✅ PASS | 2026-09-14 主机实收文本+指针移动; tools/usb-hid/ |
 | 5 | 外置 USB Wi-Fi (ath9k_htc/rtl8xxxu) | 🟡 内核构建中 | fragment 就绪; 补丁 0010-0012 修 in-tree 驱动编译; 实测 WAITING_FOR_HARDWARE (OTG+网卡) |
 | 6 | USB Host/OTG 稳定性 | ⏳ WAITING_FOR_HARDWARE | 需 OTG 线 |
-| 7 | BT RFCOMM/BNEP/raw HCI | 🟡 raw HCI **PASS**; RFCOMM/BNEP BLOCKED(主机侧) | 2026-09-14; Mac 蓝牙出站寻呼损坏, 待 Mac 重启或换 Android 对端 |
+| 7 | BT RFCOMM/BNEP/raw HCI | ✅ **PASS** | raw HCI 2026-09-14 PASS；2026-09-20 以 rooted MIX Flip 为对端完成 bond、RFCOMM 双向 payload/ACK 与 PAN/BNEP 数据链实测 |
 | 8 | USB BT  dongle | ⏳ 驱动已预置(BT_HCIBTUSB) | WAITING_FOR_HARDWARE |
-| 9 | SocketCAN (gs_usb) | ⏳ 驱动已预置 | WAITING_FOR_HARDWARE |
+| 9 | SocketCAN (gs_usb/vcan/slcan) | ✅ VCAN/SLCAN 软件闭环 PASS；gs_usb 待硬件 | 2026-09-20 GitHub Actions run `35484288726` future kernel 真机启动；VCAN CAN_RAW `0x563/NX563J` 回环 PASS；PTY 模拟 LAWICEL 的 SLCAN 双向 CAN↔ASCII PASS；真实 gs_usb CAN adapter 仍 WAITING_FOR_HARDWARE |
 | 10 | SDR (RTL-SDR) | ⏳ 纯用户态, 依赖 Phase 6 | WAITING_FOR_HARDWARE |
 | 11 | USB 以太网 (RTL815x) | ⏳ defconfig 已 =y | WAITING_FOR_HARDWARE |
+| 11A | USB 串口/调试适配器 | 🟡 future kernel 已构建并真机注册 ACM/CH341/CP210X/FTDI/PL2303 | GitHub Actions run `35484288726` 全量构建 PASS；真机 `/sys/bus/usb-serial/drivers` 已见 ch341-uart/cp210x/ftdi_sio/pl2303；实际 USB 转串口收发仍 WAITING_FOR_HARDWARE，不进入首版 MR feature |
+| 11B | Docker | 🟡 runtime + user-mode uplink 数据面 PASS；真实 Internet 待宿主联网 | 2026-09-20 Docker-test kernel 真机启动；Docker 29.1.3 + containerd 1.7.35 的 `run/exec/mqueue/bind mount/memory+cpu cgroup/bridge HTTP/-p private-netns/storage/cleanup` 全部 PASS；新增 slirp4netns 后容器 `172.17.0.2` 经 `tap0 10.0.2.100` 实收 Android host HTTP，且 Android Docker 相关 iptables 规则前后不变；本次宿主无默认外网路由，因此 Internet 项按设计 SKIP |
 | 12 | NFS | ✅ **PASS** | 2026-09-15 实机挂载 Mac nfsd 双向读写验证; 走 usb1/en156 第二对 (usb0 对设备→Mac 单通) |
 | 13 | config 片段整合 | ✅ daily fragment 机制 | CI 每次只 merge 一个 fragment |
 | 14 | 回归测试 | 🟡 持续 | 每次新内核刷入后回归 BT/音频/HID |
 | 15 | 能力矩阵定稿 | 🟡 持续维护 | docs/NETHUNTER_CAPABILITIES.md |
+
+## 2026-09-20 future-support 真机验证
+
+- 临时 kernel 分支 `nethunter-future-test-20260920` 仅用于实验，不替代首版官方 MR 的 `nethunter-22.2` 分支。GitHub Actions run `35484288726` 全绿；future `Image.gz-dtb` SHA256=`f18ab1eeffa4632a5f19fa70ab9051af86a8030541bb57f13fd43567693be02a`，最终 `kernel.config` SHA256=`1c2a1edcfb9f8b5f1dc277cd0de58a09823c174891e56ae719181ac51e11004f`。
+- 以刷测前 boot 精确 dump 为 ramdisk/boot geometry 基线，只替换 future kernel 并重新签名；测试 boot SHA256=`21097d61ad038eec794210a5389987f3a80797158552b07ada20486845fea663`。真机启动到 `4.4.302-perf+ #1 SMP PREEMPT Sun Sep 20 02:33:14 UTC 2026`，Magisk root、Kali chroot、wlan0、Bluetooth ON、USB configfs functions 均回归正常。
+- VCAN：`tools/can/vcan-smoke.sh` 创建 `vcan0`，CAN_RAW 发送并实收 CAN ID `0x563` / payload `NX563J`，输出 `VCAN_LOOPBACK_PASS`。
+- SLCAN：`tools/can/slcan-pty-smoke.py` 用 PTY 模拟 LAWICEL 串口适配器；CAN→TTY 实收 `t56364E583536334A`，TTY→CAN 实收 ID `0x456` / `Z17`，输出 `SLCAN_PTY_PASS`。整个测试不依赖外部 CAN/串口硬件。
+- 同一 future kernel 的 `ch341-uart`、`cp210x`、`ftdi_sio`、`pl2303` 与 `rndis_host` 均在运行态 sysfs 注册；实际 USB 外设收发仍保持 WAITING_FOR_HARDWARE。
+- 测试结束后已刷回 `work/future-test/boot-stable-before-future.img`；从 boot 分区重新读回 SHA256=`3c47a780c1c72d0cd6a1ad7f647daebec3f88ffd4ff662a10716f4ecf77298fe`，与刷测前逐字节一致。当前日用 boot 因而仍是原基线，`CONFIG_CAN_VCAN/SLCAN` 再次为未启用状态。
+
+## 2026-09-20 USB_DUMMY_HCD virtual-USB 实验：禁止启用
+
+- 为在没有 OTG/USB 串口硬件的情况下验证 `cdc_acm`，曾单独构建 test-only kernel，额外启用 `CONFIG_USB_DUMMY_HCD=y`；GitHub Actions 构建成功，artifact 保留在 `artifacts/kali/nethunter-virtual-usb-21ff0081-gh/` 仅作失败证据。
+- 真机刷入后，Android 无法建立正常的物理 DWC3 USB gadget：Mac 侧 NX563J 完全不出现 ADB/普通 USB 枚举，重启 Android 也不会恢复 USB 调试授权弹窗。该配置因此在 NX563J downstream 4.4 + DWC3/Android gadget 栈上判定为 **UNSAFE / DO NOT ENABLE**。
+- 恢复路径已实测：进入 fastboot 后重新执行 `fastboot oem nubia_unlock NUBIA_NX563J`，立即刷回 `work/future-test/boot-stable-before-future.img`；64 MiB boot 写入成功后 ADB 恢复。恢复后 boot SHA256 再次为 `3c47a780c1c72d0cd6a1ad7f647daebec3f88ffd4ff662a10716f4ecf77298fe`，运行内核回到 `Wed Sep 16 03:11:48 UTC 2026`，`CONFIG_USB_DUMMY_HCD`/`CAN_VCAN`/`CAN_SLCAN` 均为 not set。
+- 结论：后续没有实体 OTG/USB 串口设备时，不再使用 dummy_hcd 模拟 host/gadget；USB Host/ACM 的数据面验证保持 WAITING_FOR_HARDWARE。
+
+## 2026-09-20 Docker / NetHunter chroot 适配（runtime + user-mode uplink 数据面 E2E 已完成）
+
+- Kali NetHunter 上游 `devices.yml` 存在正式 `Docker` feature；NX563J Ubuntu 阶段已于 2026-09-19 完成 `dockerd/run/build/exec/NAT/port mapping/cgroup/bind mount` 真机矩阵，因此当前目标是把已验证内核能力迁移到 LineageOS/NetHunter kernel，而不是新增一个非标准标签。
+- 临时 Docker-test kernel 基于正式 `nethunter-22.2` / `e840cb1b`，移植已验证的 IPC namespace/mqueue 修复并合并 Docker fragment。GitHub Actions run `35510570898` 全绿；CI `Image.gz-dtb` SHA256=`9518a09be44af6512f0b36df212765a3f8767a4b5f8dd19a6feabaa3d15496f6`。最终 config 已含 `CGROUP_DEVICE/PIDS`、`PID_NS/IPC_NS/USER_NS`、`POSIX_MQUEUE`、`DEVPTS_MULTIPLE_INSTANCES`、`VETH`、`BRIDGE_NETFILTER`、`MACVLAN/IPVLAN/VXLAN` 等；并明确 `# CONFIG_USB_DUMMY_HCD is not set`。
+- 以稳定 64 MiB boot dump（SHA256=`3c47a780c1c72d0cd6a1ad7f647daebec3f88ffd4ff662a10716f4ecf77298fe`）仅替换 kernel 并重新签名得到 `work/docker-test/boot-nethunter-docker-test.img`，SHA256=`1c176aa44bd88485220a792c9fc30b2c575236d30eb33232c63a138fff0e59ba`。2026-09-20 已通过 Android/Magisk root 直接写 boot 分区真机启动，运行内核时间戳为 `Sun Sep 20 12:25:13 UTC 2026`；`CGROUP_DEVICE/PIDS`、`PID_NS/IPC_NS/USER_NS`、`POSIX_MQUEUE`、`DEVPTS_MULTIPLE_INSTANCES`、`VETH`、`BRIDGE_NETFILTER`、`MEMCG_KMEM/SWAP` 均在运行态确认，且 `USB_DUMMY_HCD` 未启用。
+- 用户态采用 Docker official ARM64 29.1.3 + containerd 1.7.35（避免 Kali Rolling containerd 2.x 对 4.4 的新内核依赖），安装于 Kali test-only `/usr/local/nx-docker-test/bin`。Docker daemon 真机启动成功，报告 `Storage Driver: vfs`、`Cgroup Driver: cgroupfs` / v1、aarch64、6 CPUs。
+- Android `/data` 虽为 ext4 且内核有 `CONFIG_OVERLAY_FS=y`，但该 downstream 4.4 真机 dmesg 明确报 `filesystem ... not supported as upperdir`，因此 `overlay2` 不可用；harness 默认改用 `vfs`，可通过 `NX_DOCKER_STORAGE_DRIVER` 为未来内核覆盖。
+- Android 全局 netns 的 legacy iptables 含 vendor `quota2` 等规则，Kali iptables 在该全局表中连创建无害测试链都会失败；Docker 因而用 Magisk BusyBox `unshare -m -n --propagation private` 同时隔离 mount + network namespace。这样 Docker 自己的 bridge/iptables 正常工作，也不修改 Android PID1 mount tree 或全局防火墙。
+- `docker exec` 另发现 Android 继承的 `TMPDIR=/data/local/tmp` 会让 runc 在 Kali chroot 外生成 `runc-process*` 临时文件；harness 固定 `TMPDIR=/tmp` 后，`docker exec ... /bin/sh` 真机 PASS。
+- `tools/docker/test-nethunter-docker-e2e.sh` 最终真机输出 `NX563J_NETHUNTER_DOCKER_E2E_PASS`：离线 ARM64 BusyBox image import、默认 IPC/mqueue `docker run`、`docker exec`、bind mount、64 MiB memory + cpu-shares、bridge 容器 HTTP 数据面、`-p 18080:8080` 在 Docker 私有 netns 的 loopback 发布、daemon/storage summary、停止后的 Android host mount leak 检查全部 PASS。稳定内核负对照仍按预期在 `CONFIG_CGROUP_DEVICE` 处 rc=20 退出。
+- 2026-09-20 继续加入 `slirp4netns` 用户态 uplink：Kali chroot 安装 `slirp4netns 1.3.3` + `libslirp 4.9.4`，harness 新增 `uplink-start/status/stop`。slirp 进程保留在 Android host netns，只在自己的私有 mount namespace 暴露 Kali `/proc`/`/dev`，并把 Docker 私有 netns 配成 `tap0=10.0.2.100/24`、默认路由 `10.0.2.2`。真机容器从 `172.17.0.2` 经 docker0/NAT/tap0/slirp 成功访问 Android 宿主 HTTP，输出 `USERMODE_UPLINK_DATAPATH_PASS`；测试前后 Android 全局 iptables 中无新增 `DOCKER/docker0/tap0/172.17/10.0.2` 规则，输出 `ANDROID_DOCKER_FIREWALL_UNCHANGED_PASS`。
+- 当前仅剩“真实外网”验证：本次测试时 Android `cmd wifi list-networks` 为 `No networks`，宿主只有 loopback、无默认外网路由，因此 E2E 正确输出 `CONTAINER_INTERNET_SKIP_HOST_OFFLINE`，没有伪造 Internet PASS。等手机连接任意正常 Wi-Fi/移动网络后，只需重跑同一 E2E 即可验证容器 Internet。由于这一项尚未实收，**首版官方 devices.yml 仍暂不加入 `Docker` feature**。
+- 第二轮 uplink E2E 结束后已通过项目既有 fastboot 恢复路径完整刷回 64 MiB `work/docker-test/boot-before-docker.img`；fastboot 报 `Sending 'boot' (65536 KB)` / `Writing 'boot' OKAY`，重启后 boot 分区 SHA256 再次为 `3c47a780c1c72d0cd6a1ad7f647daebec3f88ffd4ff662a10716f4ecf77298fe`，运行内核恢复为 `Wed Sep 16 03:11:48 UTC 2026`。
 
 ## 2026-09-14 备注
 

@@ -1,0 +1,26 @@
+# NetHunter future-support fragment for NX563J.
+#
+# IMPORTANT: this file is intentionally NOT part of the first official Kali
+# NetHunter MR. It stages useful host-side/virtual drivers that can be built and
+# software-tested without claiming external-hardware validation.
+# 2026-09-20 validation: GitHub Actions run 35484288726 built the fragment on
+# temporary branch nethunter-future-test-20260920; Image.gz-dtb SHA256 is
+# f18ab1eeffa4632a5f19fa70ab9051af86a8030541bb57f13fd43567693be02a.
+# That kernel booted on the real NX563J; VCAN and SLCAN software loops passed.
+#
+# SocketCAN software test path:
+#   vcan  -> CAN_RAW/CAN_BCM loopback testing with can-utils
+#   slcan -> serial-line CAN support for future USB/UART CAN adapters
+CONFIG_CAN_VCAN=y
+CONFIG_CAN_SLCAN=y
+
+# Common USB serial host drivers for embedded work / console access.
+CONFIG_USB_ACM=y
+CONFIG_USB_SERIAL=y
+CONFIG_USB_SERIAL_CH341=y
+CONFIG_USB_SERIAL_CP210X=y
+CONFIG_USB_SERIAL_FTDI_SIO=y
+CONFIG_USB_SERIAL_PL2303=y
+
+# Host-side RNDIS support for USB-tethered Android/Windows-style devices.
+CONFIG_USB_NET_RNDIS_HOST=y
