@@ -21,7 +21,7 @@
 | 10 | SDR (RTL-SDR) | ⏳ 纯用户态, 依赖 Phase 6 | WAITING_FOR_HARDWARE |
 | 11 | USB 以太网 (RTL815x) | ⏳ defconfig 已 =y | WAITING_FOR_HARDWARE |
 | 11A | USB 串口/调试适配器 | 🟡 future kernel 已构建并真机注册 ACM/CH341/CP210X/FTDI/PL2303 | GitHub Actions run `35484288726` 全量构建 PASS；真机 `/sys/bus/usb-serial/drivers` 已见 ch341-uart/cp210x/ftdi_sio/pl2303；实际 USB 转串口收发仍 WAITING_FOR_HARDWARE，不进入首版 MR feature |
-| 11B | Docker | 🟡 runtime + user-mode uplink + hostfwd 数据面 PASS；真实 Internet 待宿主联网 | 2026-09-21 Docker-test kernel 真机复测；`run/exec/mqueue/bind mount/memory+cpu cgroup/bridge HTTP/-p private-netns/storage/cleanup` 全部 PASS；slirp4netns 后容器 `172.17.0.2` 经 `tap0 10.0.2.100` 实收 Android host HTTP；slirp API `add_hostfwd` 又将 Android `127.0.0.1:18082` → 私有 netns `10.0.2.100:18080`，Android loopback 与 Mac→ADB forward 两路均 PASS，且 Android Docker 相关 iptables 规则前后不变；宿主 `mDefaultNetwork=null`，Internet 项按设计 SKIP |
+| 11B | Docker | ✅ Docker-test kernel 完整 E2E PASS；🟡 正式 promotion kernel 待真机回归 | 2026-09-21 `run/exec/mqueue/bind/cgroup/bridge/-p/storage/cleanup`、slirp 双向 uplink/hostfwd、Android firewall 隔离全部 PASS；连接 Mac 热点后进一步得到 `CONTAINER_INTERNET_IPV4_PASS`、`CONTAINER_DNS_PASS`、`CONTAINER_DOMAIN_HTTP_PASS`、`CONTAINER_INTERNET_PASS`。正式 `nethunter-22.2` 已 promotion Docker config + IPC fix，当前只等正式 CI artifact 真机回归后再声明上游 `Docker` feature |
 | 12 | NFS | ✅ **PASS** | 2026-09-15 实机挂载 Mac nfsd 双向读写验证; 走 usb1/en156 第二对 (usb0 对设备→Mac 单通) |
 | 13 | config 片段整合 | ✅ daily fragment 机制 | CI 每次只 merge 一个 fragment |
 | 14 | 回归测试 | 🟡 持续 | 每次新内核刷入后回归 BT/音频/HID |
@@ -43,7 +43,7 @@
 - 恢复路径已实测：进入 fastboot 后重新执行 `fastboot oem nubia_unlock NUBIA_NX563J`，立即刷回 `work/future-test/boot-stable-before-future.img`；64 MiB boot 写入成功后 ADB 恢复。恢复后 boot SHA256 再次为 `3c47a780c1c72d0cd6a1ad7f647daebec3f88ffd4ff662a10716f4ecf77298fe`，运行内核回到 `Wed Sep 16 03:11:48 UTC 2026`，`CONFIG_USB_DUMMY_HCD`/`CAN_VCAN`/`CAN_SLCAN` 均为 not set。
 - 结论：后续没有实体 OTG/USB 串口设备时，不再使用 dummy_hcd 模拟 host/gadget；USB Host/ACM 的数据面验证保持 WAITING_FOR_HARDWARE。
 
-## 2026-09-20 Docker / NetHunter chroot 适配（runtime + user-mode uplink 数据面 E2E 已完成）
+## 2026-09-20～21 Docker / NetHunter chroot 适配（完整 Internet E2E 已完成）
 
 - Kali NetHunter 上游 `devices.yml` 存在正式 `Docker` feature；NX563J Ubuntu 阶段已于 2026-09-19 完成 `dockerd/run/build/exec/NAT/port mapping/cgroup/bind mount` 真机矩阵，因此当前目标是把已验证内核能力迁移到 LineageOS/NetHunter kernel，而不是新增一个非标准标签。
 - 临时 Docker-test kernel 基于正式 `nethunter-22.2` / `e840cb1b`，移植已验证的 IPC namespace/mqueue 修复并合并 Docker fragment。GitHub Actions run `35510570898` 全绿；CI `Image.gz-dtb` SHA256=`9518a09be44af6512f0b36df212765a3f8767a4b5f8dd19a6feabaa3d15496f6`。最终 config 已含 `CGROUP_DEVICE/PIDS`、`PID_NS/IPC_NS/USER_NS`、`POSIX_MQUEUE`、`DEVPTS_MULTIPLE_INSTANCES`、`VETH`、`BRIDGE_NETFILTER`、`MACVLAN/IPVLAN/VXLAN` 等；并明确 `# CONFIG_USB_DUMMY_HCD is not set`。
@@ -54,8 +54,9 @@
 - `docker exec` 另发现 Android 继承的 `TMPDIR=/data/local/tmp` 会让 runc 在 Kali chroot 外生成 `runc-process*` 临时文件；harness 固定 `TMPDIR=/tmp` 后，`docker exec ... /bin/sh` 真机 PASS。
 - `tools/docker/test-nethunter-docker-e2e.sh` 最终真机输出 `NX563J_NETHUNTER_DOCKER_E2E_PASS`：离线 ARM64 BusyBox image import、默认 IPC/mqueue `docker run`、`docker exec`、bind mount、64 MiB memory + cpu-shares、bridge 容器 HTTP 数据面、`-p 18080:8080` 在 Docker 私有 netns 的 loopback 发布、daemon/storage summary、停止后的 Android host mount leak 检查全部 PASS。稳定内核负对照仍按预期在 `CONFIG_CGROUP_DEVICE` 处 rc=20 退出。
 - 2026-09-20 继续加入 `slirp4netns` 用户态 uplink：Kali chroot 安装 `slirp4netns 1.3.3` + `libslirp 4.9.4`，harness 新增 `uplink-start/status/stop`。slirp 进程保留在 Android host netns，只在自己的私有 mount namespace 暴露 Kali `/proc`/`/dev`，并把 Docker 私有 netns 配成 `tap0=10.0.2.100/24`、默认路由 `10.0.2.2`。真机容器从 `172.17.0.2` 经 docker0/NAT/tap0/slirp 成功访问 Android 宿主 HTTP，输出 `USERMODE_UPLINK_DATAPATH_PASS`；测试前后 Android 全局 iptables 中无新增 `DOCKER/docker0/tap0/172.17/10.0.2` 规则，输出 `ANDROID_DOCKER_FIREWALL_UNCHANGED_PASS`。2026-09-21 又启用 slirp API socket，`add_hostfwd` 将 Android loopback `127.0.0.1:18082` 映射到 Docker 私有 netns `10.0.2.100:18080`；Android 本机 curl 与 Mac 经 `adb forward tcp:18083 tcp:18082` 均实收 `NX563J_HTTP_OK`，输出 `SLIRP_HOSTFWD_ANDROID_LOOPBACK_PASS` / `SLIRP_HOSTFWD_ADB_BRIDGE_PASS`。
-- 当前仅剩“真实外网”验证：2026-09-21 复核 Android `mDefaultNetwork=null`，Wi-Fi 未连接，Android `/system/bin/curl` 对 connectivity check 返回 HTTP `000`；E2E 现在用 Android 自身 curl 判定宿主在线状态，以兼容 Android policy routing / IPv6，不再仅凭 main IPv4 路由。当前正确输出 `CONTAINER_INTERNET_SKIP_HOST_OFFLINE host_http=000`，没有伪造 Internet PASS。等手机连接任意正常 Wi-Fi/移动网络后，只需重跑同一 E2E 即可验证容器 Internet。由于这一项尚未实收，**首版官方 devices.yml 仍暂不加入 `Docker` feature**。
+- 2026-09-21 已补齐真实外网验证：NX563J 连接 Mac Internet Sharing 后宿主获得 `192.168.2.8/24`。测试中 Mac 热点 DNS `192.168.2.1` 一度进入 partial-connectivity，但公网 IPv4 仍可达；同时发现 Kali chroot 遗留 resolver `213.186.33.99`。harness 因此将宿主在线判定拆为 literal public IPv4，并给 dockerd 默认显式 `--dns 1.1.1.1 --dns 8.8.8.8`（支持 `NX_DOCKER_DNS1/2` 覆盖）。最终容器实收 `CONTAINER_INTERNET_IPV4_PASS`、`CONTAINER_DNS_PASS`、`CONTAINER_DOMAIN_HTTP_PASS` 与 `CONTAINER_INTERNET_PASS`。Internet 已不再是 blocker；当前仅剩用正式 promotion 后的 `nethunter-22.2` CI kernel 重做真机回归，再决定是否把 `Docker` 加入官方 devices feature。
 - 2026-09-21 hostfwd E2E 结束后再次通过项目既有 fastboot 恢复路径完整刷回 64 MiB `work/docker-test/boot-before-docker.img`；fastboot 报 `Sending 'boot' (65536 KB)` / `Writing 'boot' OKAY`，重启后 boot 分区 SHA256 再次为 `3c47a780c1c72d0cd6a1ad7f647daebec3f88ffd4ff662a10716f4ecf77298fe`，运行内核恢复为 `Wed Sep 16 03:11:48 UTC 2026`。
+- 完整 Internet E2E 后再次刷回同一 64 MiB 稳定 boot，并重新读回相同 SHA256 `3c47a780…98fe`。公开内核仓库 `nethunter-22.2` 当前 promotion commit `a180aa33` 将已真机验证的 IPC/mqueue 初始化修复与 Docker config 正式合并，并在 CI 中增加所有关键 Docker Kconfig 与 `USB_DUMMY_HCD` 禁用门禁；GitHub Actions run `35544472143` 正在构建正式候选。
 
 ## 2026-09-14 备注
 

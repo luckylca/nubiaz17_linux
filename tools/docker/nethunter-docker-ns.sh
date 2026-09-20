@@ -111,6 +111,14 @@ runc --version | head -1
 # if a future kernel/filesystem combination supports overlay2 correctly.
 STORAGE_DRIVER="${NX_DOCKER_STORAGE_DRIVER:-vfs}"
 
+# Do not inherit Kali's stale /etc/resolv.conf inside containers. The Android
+# uplink can use policy-routed Wi-Fi/mobile networking and, on Mac Internet
+# Sharing, the DHCP-advertised DNS proxy may be temporarily unusable even while
+# direct Internet access works. Give Docker explicit public resolvers; callers
+# can override either value for restricted networks.
+DNS1="${NX_DOCKER_DNS1:-1.1.1.1}"
+DNS2="${NX_DOCKER_DNS2:-8.8.8.8}"
+
 rm -f /run/containerd/containerd.sock /run/docker.sock /var/run/docker.sock 2>/dev/null || true
 mkdir -p /run/containerd
 containerd >/tmp/nx563j-containerd.log 2>&1 &
@@ -119,7 +127,10 @@ sleep 3
 kill -0 "$CPID" 2>/dev/null || { tail -80 /tmp/nx563j-containerd.log; exit 4; }
 
 echo "DOCKER_STORAGE_DRIVER=$STORAGE_DRIVER"
-dockerd --host=unix:///run/docker.sock --containerd=/run/containerd/containerd.sock --storage-driver="$STORAGE_DRIVER" >/tmp/nx563j-dockerd.log 2>&1 &
+echo "DOCKER_DNS_SERVERS=$DNS1,$DNS2"
+dockerd --host=unix:///run/docker.sock --containerd=/run/containerd/containerd.sock \
+    --storage-driver="$STORAGE_DRIVER" --dns "$DNS1" --dns "$DNS2" \
+    >/tmp/nx563j-dockerd.log 2>&1 &
 DPID=$!
 for i in $(seq 1 30); do
     [ -S /run/docker.sock ] && break

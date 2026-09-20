@@ -119,21 +119,30 @@ if rootsh "test -x $CHROOT/usr/bin/slirp4netns" >/dev/null 2>&1; then
   [ "$UPLINK_OUT" = 'NX563J_UPLINK_HOST_OK' ]
   echo USERMODE_UPLINK_DATAPATH_PASS
 
-  # Internet is a separate proof. Android uses policy routing and may have an
-  # IPv6-only/default cellular path that is invisible in the main IPv4 table, so
-  # determine host connectivity with Android's own curl rather than `ip -4 route`.
-  HOST_HTTP_CODE="$(rootsh "/system/bin/curl -sS --connect-timeout 6 --max-time 10 -o /dev/null -w '%{http_code}' http://connectivitycheck.gstatic.com/generate_204 2>/dev/null || true" | tr -d '\r')"
-  if [ "$HOST_HTTP_CODE" = '204' ]; then
-    echo ANDROID_HOST_INTERNET_PASS
-    if rootsh "$HARNESS_REMOTE docker run --rm $IMAGE /bin/busybox wget -q -T 12 -O /dev/null http://connectivitycheck.gstatic.com/generate_204" >/dev/null 2>&1; then
+  # Internet is a separate proof. Android uses policy routing, and Mac Internet
+  # Sharing can expose working public-IP access while its DHCP DNS proxy is
+  # temporarily broken. First verify the host against a literal public IPv4
+  # address, then independently verify container TCP + DNS + domain HTTP.
+  HOST_HTTP_CODE="$(rootsh "/system/bin/curl -sS --connect-timeout 10 --max-time 20 -o /dev/null -w '%{http_code}' http://1.1.1.1/ 2>/dev/null || true" | tr -d '\r')"
+  case "$HOST_HTTP_CODE" in
+    ''|000)
+      echo "CONTAINER_INTERNET_SKIP_HOST_OFFLINE host_http=${HOST_HTTP_CODE:-none}"
+      ;;
+    *)
+      echo "ANDROID_HOST_PUBLIC_IPV4_PASS http=$HOST_HTTP_CODE"
+      rootsh "$HARNESS_REMOTE docker run --rm $IMAGE /bin/busybox nc -z -w 15 1.1.1.1 80"
+      echo CONTAINER_INTERNET_IPV4_PASS
+
+      DNS_OUT="$(rootsh "$HARNESS_REMOTE docker run --rm $IMAGE /bin/busybox nslookup connectivitycheck.gstatic.com" | tr -d '\r')"
+      printf '%s\n' "$DNS_OUT"
+      printf '%s\n' "$DNS_OUT" | grep -q 'Address 1:'
+      echo CONTAINER_DNS_PASS
+
+      rootsh "$HARNESS_REMOTE docker run --rm $IMAGE /bin/busybox wget -q -T 20 -O /dev/null http://connectivitycheck.gstatic.com/generate_204"
+      echo CONTAINER_DOMAIN_HTTP_PASS
       echo CONTAINER_INTERNET_PASS
-    else
-      echo CONTAINER_INTERNET_FAIL_HOST_ONLINE >&2
-      exit 22
-    fi
-  else
-    echo "CONTAINER_INTERNET_SKIP_HOST_OFFLINE host_http=${HOST_HTTP_CODE:-none}"
-  fi
+      ;;
+  esac
 fi
 
 printf '\n=== docker exec ===\n'

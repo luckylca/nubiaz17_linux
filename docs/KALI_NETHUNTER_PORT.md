@@ -4,7 +4,7 @@
 > 起点优势：我们的 Ubuntu 内核已基于 **LineageOS 官方同源同分支**
 > (LineageOS/android_kernel_nubia_msm8998 @ lineage-22.2, cda6a278) 构建，
 > 全部 12 个 downstream 补丁直接落在官方内核树上。
-> 状态：K1-K5 已完成并真机验证；当前剩余 K6 官方上游提交，以及可选能力扩展。2026-09-20 已完成 NetHunter Docker runtime + slirp4netns 用户态 uplink 数据面真机 E2E；真实容器 Internet 仍待宿主联网后复测。测试后设备已逐字节恢复到稳定 Android/NetHunter boot（SHA256 `3c47a780…98fe`）。
+> 状态：K1-K5 已完成并真机验证；当前剩余 K6 官方上游提交，以及可选能力扩展。2026-09-21 已完成 NetHunter Docker runtime、slirp4netns 双向数据面与真实公网 IPv4/DNS/域名 HTTP 的完整 E2E；正式 `nethunter-22.2` 已 promotion Docker 支持，当前等待正式 CI artifact 真机回归。测试后设备已逐字节恢复到稳定 Android/NetHunter boot（SHA256 `3c47a780…98fe`）。
 
 ## 官方要求（调研结论，2026-09-16）
 
@@ -37,7 +37,7 @@
 | RTL8188EUS/RTL8XXXU | in-tree rtl8xxxu 已 =y（Phase 5 kernel-side PASS） | config fragment |
 | Internal_BT | WCN3990 HCIUART 已 =y，raw HCI PASS | config fragment |
 | BT_RFCOMM | RFCOMM/BNEP 已 =y；2026-09-20 以 MIX Flip 为对端完成自动配对、RFCOMM 双向 payload/ACK，BNEP/PAN 亦完成真实链路与单向 ICMP 数据验证 | config fragment + Android 双机实测 |
-| Docker | Docker-test kernel + Docker 29.1.3/containerd 1.7.35 已完成真机 runtime E2E：run/exec/mqueue/bind/cgroup/bridge/private-netns port publish/cleanup PASS；slirp4netns 已将私有 Docker netns 接到 Android host netns，容器→宿主 HTTP 数据面 PASS；slirp API hostfwd 又完成 Android loopback 与 Mac→ADB-forward→Android→slirp→Docker 两条反向发布链路，且 Android 全局 Docker 相关 iptables 规则不变。当前宿主 `mDefaultNetwork=null`，真实容器 Internet 尚未实收 | `tools/docker/nethunter-docker-ns.sh` + `test-nethunter-docker-e2e.sh` + `install-nethunter-slirp.sh`；首版 MR 暂不声明该 feature |
+| Docker | Docker-test kernel + Docker 29.1.3/containerd 1.7.35 已完成完整真机 E2E：run/exec/mqueue/bind/cgroup/bridge/private-netns publish/cleanup、slirp 容器→宿主、slirp API Android/Mac→容器 hostfwd 全部 PASS；连接 Mac 热点后公网 IPv4 TCP、公共 DNS 与域名 HTTP 也分别得到 `CONTAINER_INTERNET_IPV4_PASS` / `CONTAINER_DNS_PASS` / `CONTAINER_DOMAIN_HTTP_PASS` / `CONTAINER_INTERNET_PASS`，且 Android 全局 Docker iptables 无污染 | 正式 `nethunter-22.2` commit `a180aa33` 已合入同一 IPC fix + Docker config + CI Kconfig 安全门禁；等待该正式 CI artifact 真机回归后再把 `Docker` 声明进 devices.yml |
 
 ## 移植阶段
 
