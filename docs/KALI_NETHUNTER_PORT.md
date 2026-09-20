@@ -37,7 +37,7 @@
 | RTL8188EUS/RTL8XXXU | in-tree rtl8xxxu 已 =y（Phase 5 kernel-side PASS） | config fragment |
 | Internal_BT | WCN3990 HCIUART 已 =y，raw HCI PASS | config fragment |
 | BT_RFCOMM | RFCOMM/BNEP 已 =y；2026-09-20 以 MIX Flip 为对端完成自动配对、RFCOMM 双向 payload/ACK，BNEP/PAN 亦完成真实链路与单向 ICMP 数据验证 | config fragment + Android 双机实测 |
-| Docker | Docker-test kernel + Docker 29.1.3/containerd 1.7.35 已完成真机 runtime E2E：run/exec/mqueue/bind/cgroup/bridge/private-netns port publish/cleanup PASS；并已用 slirp4netns 将私有 Docker netns 接到 Android host netns，容器→宿主 HTTP 数据面 PASS 且 Android 全局 Docker 相关 iptables 规则不变。测试时宿主无外网默认路由，因此真实容器 Internet 尚未实收 | `tools/docker/nethunter-docker-ns.sh` + `test-nethunter-docker-e2e.sh` + `install-nethunter-slirp.sh`；首版 MR 暂不声明该 feature |
+| Docker | Docker-test kernel + Docker 29.1.3/containerd 1.7.35 已完成真机 runtime E2E：run/exec/mqueue/bind/cgroup/bridge/private-netns port publish/cleanup PASS；slirp4netns 已将私有 Docker netns 接到 Android host netns，容器→宿主 HTTP 数据面 PASS；slirp API hostfwd 又完成 Android loopback 与 Mac→ADB-forward→Android→slirp→Docker 两条反向发布链路，且 Android 全局 Docker 相关 iptables 规则不变。当前宿主 `mDefaultNetwork=null`，真实容器 Internet 尚未实收 | `tools/docker/nethunter-docker-ns.sh` + `test-nethunter-docker-e2e.sh` + `install-nethunter-slirp.sh`；首版 MR 暂不声明该 feature |
 
 ## 移植阶段
 

@@ -16,6 +16,8 @@ SLIRP_PIDFILE="$CHROOT/tmp/nx563j-slirp4netns.pid"
 SLIRP_LOG=${SLIRP_LOG:-/data/local/tmp/nx563j-slirp4netns.log}
 SLIRP_TAP=${NX_DOCKER_SLIRP_TAP:-tap0}
 SLIRP_MTU=${NX_DOCKER_SLIRP_MTU:-65520}
+SLIRP_API_REL=/tmp/nx563j-slirp4netns.sock
+SLIRP_API="$CHROOT$SLIRP_API_REL"
 
 [ "$(id -u)" = 0 ] || { echo "FAIL: root required" >&2; exit 1; }
 [ -x "$BB" ] || { echo "FAIL: Magisk BusyBox missing: $BB" >&2; exit 1; }
@@ -170,8 +172,10 @@ inside_uplink() {
     "$BB" mkdir -p "$CHROOT/proc" "$CHROOT/dev"
     "$BB" mount -o bind /proc "$CHROOT/proc"
     "$BB" mount -o rbind /dev "$CHROOT/dev"
+    rm -f "$SLIRP_API"
     exec "$BB" chroot "$CHROOT" /usr/bin/slirp4netns \
-        --configure --mtu="$SLIRP_MTU" "$dpid" "$SLIRP_TAP"
+        --configure --mtu="$SLIRP_MTU" --api-socket="$SLIRP_API_REL" \
+        "$dpid" "$SLIRP_TAP"
 }
 
 start_uplink() {
@@ -186,7 +190,7 @@ start_uplink() {
         old="$(cat "$SLIRP_PIDFILE" 2>/dev/null || true)"
         case "$old" in *[!0-9]*|'') : ;; *) kill "$old" 2>/dev/null || true ;; esac
     fi
-    rm -f "$SLIRP_PIDFILE" "$SLIRP_LOG"
+    rm -f "$SLIRP_PIDFILE" "$SLIRP_LOG" "$SLIRP_API"
 
     # Mount namespace only: network namespace intentionally remains Android's
     # host netns. slirp4netns then opens the target Docker netns by dockerd PID.
@@ -201,8 +205,8 @@ start_uplink() {
             echo "FAIL: slirp4netns exited during startup" >&2
             exit 13
         fi
-        if "$BB" nsenter -t "$DPID" -n /system/bin/ip -4 addr show "$SLIRP_TAP" 2>/dev/null | "$BB" grep -q '10\.0\.2\.'; then
-            echo "DOCKER_UPLINK_STARTED slirp_pid=$SPID tap=$SLIRP_TAP"
+        if [ -S "$SLIRP_API" ] && "$BB" nsenter -t "$DPID" -n /system/bin/ip -4 addr show "$SLIRP_TAP" 2>/dev/null | "$BB" grep -q '10\.0\.2\.'; then
+            echo "DOCKER_UPLINK_STARTED slirp_pid=$SPID tap=$SLIRP_TAP api=$SLIRP_API_REL"
             "$BB" nsenter -t "$DPID" -n /system/bin/ip -4 addr show "$SLIRP_TAP" 2>/dev/null || true
             "$BB" nsenter -t "$DPID" -n /system/bin/ip -4 route 2>/dev/null || true
             return 0
@@ -227,8 +231,26 @@ stop_uplink() {
         *[!0-9]*|'') : ;;
         *) kill "$SPID" 2>/dev/null || true ;;
     esac
-    rm -f "$SLIRP_PIDFILE"
+    rm -f "$SLIRP_PIDFILE" "$SLIRP_API"
     echo "DOCKER_UPLINK_STOPPED"
+}
+
+slirp_api_request() {
+    [ -S "$SLIRP_API" ] || { echo "FAIL: slirp4netns API socket missing: $SLIRP_API" >&2; exit 15; }
+    req="$1"
+    "$BB" chroot "$CHROOT" /bin/sh -c \
+        'printf "%s" "$1" | /usr/bin/socat - UNIX-CONNECT:/tmp/nx563j-slirp4netns.sock' sh "$req"
+}
+
+add_hostfwd() {
+    host_port="${1:-18082}"
+    guest_port="${2:-18080}"
+    case "$host_port:$guest_port" in *[!0-9:]*|'') echo "FAIL: host/guest ports must be numeric" >&2; exit 2;; esac
+    req="{\"execute\":\"add_hostfwd\",\"arguments\":{\"proto\":\"tcp\",\"host_addr\":\"127.0.0.1\",\"host_port\":$host_port,\"guest_addr\":\"10.0.2.100\",\"guest_port\":$guest_port}}"
+    resp="$(slirp_api_request "$req")"
+    echo "$resp"
+    echo "$resp" | "$BB" grep -q '"id"' || { echo "FAIL: slirp add_hostfwd returned no id" >&2; exit 16; }
+    echo "DOCKER_HOSTFWD_ADDED host=127.0.0.1:$host_port guest=10.0.2.100:$guest_port"
 }
 
 case "$MODE" in
@@ -238,7 +260,7 @@ case "$MODE" in
         exec "$BB" unshare -m --propagation private "$BB" sh "$0" inside-probe
         ;;
     start)
-        rm -f "$PIDFILE" "$CPIDFILE" "$SLIRP_PIDFILE"
+        rm -f "$PIDFILE" "$CPIDFILE" "$SLIRP_PIDFILE" "$SLIRP_API"
         LOG=/data/local/tmp/nx563j-docker-ns-start.log
         rm -f "$LOG"
         # Keep Docker in private mount + network namespaces. The private netns
@@ -292,6 +314,13 @@ case "$MODE" in
     uplink-stop)
         stop_uplink
         ;;
+    hostfwd-add)
+        shift
+        add_hostfwd "${1:-18082}" "${2:-18080}"
+        ;;
+    hostfwd-list)
+        slirp_api_request '{"execute":"list_hostfwd"}'
+        ;;
     status)
         get_dpid
         CPID="$(cat "$CPIDFILE" 2>/dev/null || true)"
@@ -322,7 +351,7 @@ case "$MODE" in
         echo "DOCKER_NS_STOPPED"
         ;;
     *)
-        echo "Usage: $0 [probe|start|status|uplink-start|uplink-status|uplink-stop|docker <args...>|shell|stop]" >&2
+        echo "Usage: $0 [probe|start|status|uplink-start|uplink-status|uplink-stop|hostfwd-add [host_port guest_port]|hostfwd-list|docker <args...>|shell|stop]" >&2
         exit 2
         ;;
 esac

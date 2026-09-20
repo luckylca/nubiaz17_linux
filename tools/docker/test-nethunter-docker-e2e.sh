@@ -33,6 +33,7 @@ host_docker_firewall_markers() {
 
 cleanup() {
   set +e
+  adb forward --remove tcp:18083 >/dev/null 2>&1 || true
   rootsh "$HARNESS_REMOTE stop" >/dev/null 2>&1 || true
   rootsh "pkill -f '/data/adb/magisk/busybox httpd -f -p 18081' 2>/dev/null || true; rm -rf $CHROOT/tmp/nx-docker-rootfs $CHROOT/tmp/nx-busybox-rootfs.tar $CHROOT/tmp/nx-bind $CHROOT/tmp/nx-www /data/local/tmp/nx-uplink-www" >/dev/null 2>&1 || true
   set -e
@@ -118,17 +119,20 @@ if rootsh "test -x $CHROOT/usr/bin/slirp4netns" >/dev/null 2>&1; then
   [ "$UPLINK_OUT" = 'NX563J_UPLINK_HOST_OK' ]
   echo USERMODE_UPLINK_DATAPATH_PASS
 
-  # Internet is a separate proof. Do not fail the Docker runtime E2E merely
-  # because Android currently has no Wi-Fi/mobile uplink.
-  HOST_ROUTE="$(rootsh "/system/bin/ip -4 route 2>/dev/null | /data/adb/magisk/busybox grep '^default ' | /data/adb/magisk/busybox head -1 || true" | tr -d '\r')"
-  if [ -n "$HOST_ROUTE" ]; then
+  # Internet is a separate proof. Android uses policy routing and may have an
+  # IPv6-only/default cellular path that is invisible in the main IPv4 table, so
+  # determine host connectivity with Android's own curl rather than `ip -4 route`.
+  HOST_HTTP_CODE="$(rootsh "/system/bin/curl -sS --connect-timeout 6 --max-time 10 -o /dev/null -w '%{http_code}' http://connectivitycheck.gstatic.com/generate_204 2>/dev/null || true" | tr -d '\r')"
+  if [ "$HOST_HTTP_CODE" = '204' ]; then
+    echo ANDROID_HOST_INTERNET_PASS
     if rootsh "$HARNESS_REMOTE docker run --rm $IMAGE /bin/busybox wget -q -T 12 -O /dev/null http://connectivitycheck.gstatic.com/generate_204" >/dev/null 2>&1; then
       echo CONTAINER_INTERNET_PASS
     else
-      echo CONTAINER_INTERNET_WARN_HOST_HAS_ROUTE_BUT_PROBE_FAILED
+      echo CONTAINER_INTERNET_FAIL_HOST_ONLINE >&2
+      exit 22
     fi
   else
-    echo CONTAINER_INTERNET_SKIP_HOST_OFFLINE
+    echo "CONTAINER_INTERNET_SKIP_HOST_OFFLINE host_http=${HOST_HTTP_CODE:-none}"
   fi
 fi
 
@@ -175,6 +179,30 @@ PORT_LOOPBACK_OUT="$(rootsh "$HARNESS_REMOTE shell /usr/bin/curl -fsS http://127
 echo "$PORT_LOOPBACK_OUT"
 [ "$PORT_LOOPBACK_OUT" = 'NX563J_HTTP_OK' ]
 echo PORT_MAPPING_PRIVATE_NS_PASS
+
+# slirp4netns API hostfwd exposes the private Docker namespace back to Android
+# without adding any Android-global iptables rules. Bind to Android loopback only
+# so the test never opens a LAN-facing service unexpectedly.
+if rootsh "test -x $CHROOT/usr/bin/slirp4netns" >/dev/null 2>&1; then
+  rootsh "$HARNESS_REMOTE hostfwd-add 18082 18080"
+  rootsh "$HARNESS_REMOTE hostfwd-list"
+
+  HOSTFWD_ANDROID="$(rootsh "/system/bin/curl -fsS --connect-timeout 5 http://127.0.0.1:18082/" | tr -d '\r')"
+  echo "$HOSTFWD_ANDROID"
+  [ "$HOSTFWD_ANDROID" = 'NX563J_HTTP_OK' ]
+  echo SLIRP_HOSTFWD_ANDROID_LOOPBACK_PASS
+
+  # ADB forwarding adds a second independent client path from the Mac host into
+  # the Android loopback listener. This proves host->slirp->Docker-port datapath
+  # while the phone has no Wi-Fi address. It is not claimed as LAN reachability.
+  adb forward --remove tcp:18083 >/dev/null 2>&1 || true
+  adb forward tcp:18083 tcp:18082 >/dev/null
+  HOSTFWD_MAC="$(curl -fsS --connect-timeout 5 http://127.0.0.1:18083/)"
+  echo "$HOSTFWD_MAC"
+  [ "$HOSTFWD_MAC" = 'NX563J_HTTP_OK' ]
+  echo SLIRP_HOSTFWD_ADB_BRIDGE_PASS
+  adb forward --remove tcp:18083 >/dev/null
+fi
 
 # Port publishing is considered a hard PASS if reachable through any non-loopback
 # host address. If the phone currently has no global address, record a SKIP and
