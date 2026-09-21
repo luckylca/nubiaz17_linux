@@ -21,11 +21,11 @@ Kernel source:
 
 Kernel `Image.gz-dtb` SHA256:
 
-`2038303df80404048427a24ea24b8f3b7909914dce8a38ba48cc8bc38d7986a4`
+`8f1652062fa052fff6d1f3fc2ddf9d1f1b9ed5fbd4afeec5157210bef44fe3a7`
 
 Declared features:
 
-`[BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]`
+`[BT_RFCOMM, CDROM, Docker, HID-4, Injection, QCACLD, Internal_BT, NFS]`
 
 ## Real-device validation
 
@@ -45,6 +45,7 @@ Tested on a physical Nubia Z17 with LineageOS 22.2 / Android 15 and Kali NetHunt
 - `BT_RFCOMM` was verified against a second physical Android device (Xiaomi MIX Flip): both devices bonded successfully, NX563J sent `NX563J_RFCOMM_TEST`, and the peer returned `MIXFLIP_ACK:NX563J_RFCOMM_TEST` (`CLIENT_PASS` / `SERVER_PASS`).
 - BNEP/PAN was additionally validated as supporting evidence: both devices reached PAN connected state and exposed `bt-pan` as `UP,LOWER_UP`; TX/RX counters matched cross-direction traffic, and a temporary bound-interface IP test passed peer -> NX563J ICMP 3/3 with 0% loss.
 - `NFS` client support was validated on real NX563J hardware against a macOS NFS server using a real mount and bidirectional file I/O; the submitted kernel contains NFS v3/v4 client support.
+- `Docker` was validated on the formal `nethunter-22.2` promotion kernel (`a180aa33`, CI run `35544472143`): Docker 29.1.3/containerd 1.7.35 passed run/exec/mqueue/bind/cgroup/bridge/private-netns publishing, slirp4netns uplink, Android/Mac host forwarding, public IPv4, DNS, domain HTTP, cleanup, and Android-firewall-isolation checks. The submitted `Image.gz-dtb` is that exact formal CI artifact.
 - Normal Wi-Fi STA operation remains functional after the injection changes.
 
 ## NX563J AnyKernel / SAR handling
@@ -69,12 +70,12 @@ Validated against current `kali-nethunter-kernels` `main`:
 - merged `devices.yml` YAML parse: PASS, exactly one `nx563j` entry
 - upstream `.yamllint.yml`: PASS
 - upstream `bin/devices-integrity.py`: PASS (`271` directory kernel/version entries and `271` YAML kernel/version entries)
-- current `kali-nethunter-installer` kernel-only build: PASS
+- current `kali-nethunter-installer` `main` (`e63b0476a7fd5767729208c68a78ad79afaaf556`) kernel-only build: PASS
 
 Pre-MR installer package used for build-tool validation:
 
-`kernel-nethunter-20260919_205420-nx563j-los-fifteen-pre-mr.zip`
+`kernel-nethunter-20260921_0756-nx563j-los-fifteen-pre-mr-docker.zip`
 
 SHA256:
 
-`4f9b33dc87ca3080d0c30f4ebbc2ee9f37154fa009998b5742950de3f1400c23`
+`4b0de9214e84aa1b2bec5119bd6e9d3d69a315b0a4d66b4120461f1841d23f02`

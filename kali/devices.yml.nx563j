@@ -11,6 +11,9 @@
 # labels (RTL88XXAU etc.) are omitted until OTG hardware arrives.
 # CDROM was hardware-verified on 2026-09-20: macOS enumerated the configfs
 # mass-storage LUN with cdrom=1 as a real `File-CD Gadget` (0930:6545).
+# Docker was fully validated on the formal nethunter-22.2 promotion kernel
+# (a180aa33): runtime, cgroups, bridge networking, slirp uplink/hostfwd,
+# public IPv4, DNS and domain HTTP all passed on real NX563J hardware.
 
 - nx563j:
     model  : Nubia Z17
@@ -36,4 +39,4 @@
             description: LineageOS 22.2
             author     : luckylca
             source     : 'git clone https://github.com/luckylca/android_kernel_nubia_msm8998_nethunter -b nethunter-22.2'
-            features   : [BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]
+            features   : [BT_RFCOMM, CDROM, Docker, HID-4, Injection, QCACLD, Internal_BT, NFS]

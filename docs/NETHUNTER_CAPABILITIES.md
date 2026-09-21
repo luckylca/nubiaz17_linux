@@ -6,10 +6,11 @@ WAITING_FOR_HARDWARE。
 
 ## Android 平台（LineageOS 22.2 + Magisk + Kali chroot，2026-09-17 装机）
 
-LOS 22.2-20260911-NIGHTLY-nx563j + 自研 NetHunter 内核（CI 构建，源 commit
-a5fee84d，Image.gz-dtb sha256 2038303d…）+ Magisk 30.7 + 官方安装器产出的
-nethunter full 包（sha256 f1708e66…，kalifs sha256 fd108959…与官方一致）。
-详见 docs/KALI_NETHUNTER_PORT.md K5 节。
+初始装机基线为 LOS 22.2-20260911-NIGHTLY-nx563j + NetHunter 内核 `a5fee84d`
+（Image.gz-dtb sha256 `2038303d…`）+ Magisk 30.7 + 官方安装器 full 包；2026-09-21
+正式提交/Docker 基线已升级为 `nethunter-22.2` commit `a180aa33` 的 CI artifact
+（Image.gz-dtb sha256 `8f165206…e3a7`），并完成真机完整回归。Kali userspace 保持同一
+2026.2 环境。详见 docs/KALI_NETHUNTER_PORT.md K5/K6 节。
 
 | 能力 | 实测 | 结果 | 备注 |
 |------|------|------|------|
@@ -22,7 +23,7 @@ nethunter full 包（sha256 f1708e66…，kalifs sha256 fd108959…与官方一�
 | BT RFCOMM/BNEP 数据通道 | 2026-09-20: rooted Xiaomi MIX Flip 对端；双方 `BOND_STATE_BONDED`；NX RFCOMM 发 `NX563J_RFCOMM_TEST`，MIX 实收并回 `MIXFLIP_ACK:NX563J_RFCOMM_TEST`，两端 `CLIENT_PASS/SERVER_PASS`；PAN/BNEP 达 `STATE_CONNECTED`，双方 `bt-pan UP,LOWER_UP`，链路字节/包计数互为 TX/RX，临时测试 IP 下 MIX→NX ping 3/3 0% loss | **PASS(双机实收)** | NX→MIX ICMP 被 Android tether/firewall 输入策略过滤，但 ARP `REACHABLE`、镜像 link counters 和反向 ICMP 已证明 BNEP 数据链；官方 feature 使用 `BT_RFCOMM`，无单独 BNEP 标签 |
 | Wi-Fi STA 日常上网（回归） | 2026-09-17: 自研内核下连接 Mac 共享热点，192.168.2.6/24，signal -33dBm，tx 866.7Mbit/s VHT-MCS9 80MHz 2SS，网关 ping 0% 丢包，generate_204=204 | **PASS** | 换内核不影响日用 Wi-Fi——MR 关键回归项 |
 | Magisk root | `su -c id` → uid=0（magisk 域） | **PASS** | 授权弹窗默认 10s 超时，需在 Superuser 页手动允许 |
-| Docker Engine runtime | 2026-09-21: Docker-test kernel + Docker 29.1.3/containerd 1.7.35 完成完整真机 E2E；`run`/`mqueue`/`exec`/bind/cgroup/bridge/private-netns `-p`/cleanup 全部 PASS；slirp4netns 完成容器→Android uplink 与 Android/Mac→hostfwd→容器双向数据面；连接 `lucky’s MacBook Air` 后又实收 `ANDROID_HOST_PUBLIC_IPV4_PASS`、`CONTAINER_INTERNET_IPV4_PASS`、`CONTAINER_DNS_PASS`、`CONTAINER_DOMAIN_HTTP_PASS`、`CONTAINER_INTERNET_PASS` | **PASS(full runtime + uplink + hostfwd + Internet)** | Android `/data` 上 downstream 4.4 overlayfs 不支持 upperdir，因此用 `vfs`。Mac Internet Sharing 的 DHCP DNS 代理 `192.168.2.1` 曾出现 partial-connectivity，而公网 IPv4 仍可达；同时发现 Kali chroot 旧 resolver 为 `213.186.33.99`。harness 现给 dockerd 默认显式 DNS `1.1.1.1` + `8.8.8.8`（可覆盖），完整域名 HTTP 已 PASS。正式 `nethunter-22.2` 已开始 promotion；官方 `Docker` feature 仅等待正式 promotion kernel 的真机回归，不再等待 Internet 证据 |
+| Docker Engine runtime | 2026-09-21: 正式 `nethunter-22.2` promotion kernel `a180aa33`（CI run `35544472143`）+ Docker 29.1.3/containerd 1.7.35 完成完整真机 E2E；`run`/mqueue/exec/bind/cgroup/bridge/private-netns publish/cleanup、slirp4netns uplink、Android/Mac hostfwd、公网 IPv4、DNS、域名 HTTP 全部 PASS | **PASS(formal kernel, full runtime + uplink + hostfwd + Internet)** | 正式 Image SHA256=`8f165206…e3a7`，`USB_DUMMY_HCD` 明确关闭；Android `/data` 的 downstream 4.4 overlayfs 不支持 upperdir，因此使用 `vfs`。dockerd 默认显式 DNS `1.1.1.1` + `8.8.8.8`（可覆盖）。`Docker` 已进入首版官方 feature |
 
 ## Linux 用户态平台（Ubuntu，K5 前的历史验证）
 

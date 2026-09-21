@@ -14,27 +14,27 @@ Merge `kali/devices.yml.nx563j` into upstream `devices.yml`, then add:
 
 Kernel SHA256:
 
-`2038303df80404048427a24ea24b8f3b7909914dce8a38ba48cc8bc38d7986a4`
+`8f1652062fa052fff6d1f3fc2ddf9d1f1b9ed5fbd4afeec5157210bef44fe3a7`
 
 Public source:
 
 `https://github.com/luckylca/android_kernel_nubia_msm8998_nethunter` branch `nethunter-22.2`.
 
-The tested binary was built at `a5fee84d`. Current branch head `e840cb1b` is one documentation-only RNDIS correction after that build; kernel source/config are unchanged.
+The submitted binary is the formal GitHub Actions artifact from source commit `a180aa33cd3d5603e4d1a89767940c2c94f01ec3` (`nx563j: promote validated Docker support`), CI run `35544472143`. That exact artifact was flashed and passed the full real-device Docker regression plus Magisk/Kali/Wi-Fi/Bluetooth/USB-configfs smoke checks.
 
-## Automated pre-MR validation (2026-09-20)
+## Automated pre-MR validation (2026-09-21)
 
-- `./kali/validate_submission.sh`: PASS with the final `[BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]` feature list and reviewed USB/SAR fixes.
-- Current GitLab upstream `main` was rechecked on 2026-09-20: remote HEAD `e5991aa941188697e56c526c1dbc9979afa2db28`, identical to the local upstream metadata cache.
+- `./kali/validate_submission.sh`: PASS target is the final `[BT_RFCOMM, CDROM, Docker, HID-4, Injection, QCACLD, Internal_BT, NFS]` feature list, formal `a180aa33` kernel provenance/config, and reviewed USB/SAR fixes.
+- Current GitLab upstream `main` was rechecked on 2026-09-21: remote HEAD `e5991aa941188697e56c526c1dbc9979afa2db28`, still identical to the staging base.
 - Candidate entry appended to that full upstream `devices.yml`: YAML parse PASS with exactly one `nx563j` entry.
 - Current upstream `.yamllint.yml` against the merged full `devices.yml`: PASS.
 - Current upstream `bin/devices-integrity.py` against an exact Git-tree directory skeleton: PASS (`Kernels in directories: 271`, `Kernels in YAML kernels: 271`). This metadata-only skeleton is valid because the official integrity script checks directory presence/IDs rather than kernel file contents.
-- Current upstream `kali-nethunter-installer` main: kernel-only `--installer` build PASS.
-- Generated pre-MR package after final feature-label correction: `artifacts/kali/kernel-nethunter-20260919_205420-nx563j-los-fifteen-pre-mr.zip`.
-- Pre-MR package SHA256: `4f9b33dc87ca3080d0c30f4ebbc2ee9f37154fa009998b5742950de3f1400c23`.
-- The pre-MR package embeds the candidate `Image.gz-dtb`, keyboard descriptor, mouse descriptor, and SAR patch byte-for-byte. The final MR candidate `init.nethunter.rc` has only trailing-whitespace / EOF-blank-line cleanup relative to that package; the validator normalizes only those whitespace differences and still rejects any functional rc change.
+- Current upstream `kali-nethunter-installer` main at `e63b0476a7fd5767729208c68a78ad79afaaf556`: kernel-only `--installer` build PASS.
+- Generated final Docker pre-MR package: `artifacts/kali/kernel-nethunter-20260921_0756-nx563j-los-fifteen-pre-mr-docker.zip`.
+- Pre-MR package SHA256: `4b0de9214e84aa1b2bec5119bd6e9d3d69a315b0a4d66b4120461f1841d23f02`.
+- The package embeds the formal `a180aa33` candidate `Image.gz-dtb`, keyboard descriptor, mouse descriptor, and SAR patch byte-for-byte. The rc matches after trailing-whitespace / EOF-blank-line normalization, and the validator rejects any functional rc change.
 
-The 2026-09-16 kernel installer remains the hardware-tested baseline. The 2026-09-19 pre-MR package proves compatibility with the current upstream build tooling but is not yet a replacement for the hardware validation baseline.
+The formal `a180aa33` kernel artifact is now the hardware-tested submission baseline. The older 2026-09-16/19 packages remain useful only as historical ramdisk/HID validation anchors.
 
 ## Already verified on real NX563J hardware
 
@@ -53,16 +53,16 @@ The 2026-09-16 kernel installer remains the hardware-tested baseline. The 2026-0
 - 2026-09-20 `BT_RFCOMM` end-to-end PASS against a rooted Xiaomi MIX Flip peer: both devices auto-bonded to `BOND_STATE_BONDED`; NX563J sent `NX563J_RFCOMM_TEST`, the peer received it and returned `MIXFLIP_ACK:NX563J_RFCOMM_TEST`, with `CLIENT_PASS` / `SERVER_PASS` on the two ends.
 - BNEP/PAN was also verified as extra evidence (there is no separate upstream BNEP feature label): both peers reached `BluetoothPan` connected state, both exposed `bt-pan` as `UP,LOWER_UP`, link counters matched cross-direction byte-for-byte, and a temporary bound-interface IP test produced successful MIX→NX ICMP `3/3` with 0% loss. Reverse ICMP was filtered by Android tether/firewall policy, not by the BNEP link.
 - `NFS` client support was hardware-verified on NX563J against a macOS NFS server with a real mount plus bidirectional file I/O; the current NetHunter kernel also contains `CONFIG_NFS_FS=y`, `CONFIG_NFS_V3=y`, and `CONFIG_NFS_V4=y`.
+- `Docker` PASS on the exact formal CI artifact submitted here (`a180aa33`, Image SHA256 `8f165206…e3a7`): Docker 29.1.3/containerd 1.7.35 completed runtime, mqueue, exec, bind, cgroups, bridge/private-netns publishing, slirp uplink/hostfwd, public IPv4, DNS, domain HTTP, Android-firewall isolation, and cleanup tests.
 
 ## Intentionally not claimed in devices.yml
 
 - External Wi-Fi feature labels such as `RTL88XXAU`: do not claim without OTG adapter hardware testing, even where kernel-side support exists.
 - `CAN`, `ATH9K_HTC`, `RTL8XXXU`: enabled in the kernel does not equal hardware validation; keep them out of the official feature list for now.
-- `Docker`: the Docker-test kernel has now passed the complete true-device E2E matrix: runtime (`run/exec/mqueue/bind/cgroup/bridge/private-netns publish/cleanup`), slirp4netns container→Android uplink, slirp API Android/Mac→container hostfwd, public IPv4 TCP, public DNS, and domain HTTP. The final run emitted `CONTAINER_INTERNET_IPV4_PASS`, `CONTAINER_DNS_PASS`, `CONTAINER_DOMAIN_HTTP_PASS`, `CONTAINER_INTERNET_PASS`, `ANDROID_DOCKER_FIREWALL_UNCHANGED_PASS`, and `NX563J_NETHUNTER_DOCKER_E2E_PASS`. The formal source branch now contains promotion commit `a180aa33` with the exact tested IPC fix, Docker Kconfig set, and CI guards. Keep `Docker` out of devices.yml only until the CI artifact built from that formal promotion commit is flashed and the same real-device regression passes; Internet itself is no longer missing.
 
 Current declared features remain deliberately conservative but aligned with the current upstream README feature names:
 
-`[BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]`
+`[BT_RFCOMM, CDROM, Docker, HID-4, Injection, QCACLD, Internal_BT, NFS]`
 
 ## Known limitation to disclose
 

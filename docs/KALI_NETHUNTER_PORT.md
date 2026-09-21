@@ -4,7 +4,7 @@
 > 起点优势：我们的 Ubuntu 内核已基于 **LineageOS 官方同源同分支**
 > (LineageOS/android_kernel_nubia_msm8998 @ lineage-22.2, cda6a278) 构建，
 > 全部 12 个 downstream 补丁直接落在官方内核树上。
-> 状态：K1-K5 已完成并真机验证；当前剩余 K6 官方上游提交，以及可选能力扩展。2026-09-21 已完成 NetHunter Docker runtime、slirp4netns 双向数据面与真实公网 IPv4/DNS/域名 HTTP 的完整 E2E；正式 `nethunter-22.2` 已 promotion Docker 支持，当前等待正式 CI artifact 真机回归。测试后设备已逐字节恢复到稳定 Android/NetHunter boot（SHA256 `3c47a780…98fe`）。
+> 状态：K1-K5 已完成并真机验证；当前主要剩余 K6 官方上游提交，以及可选能力扩展。2026-09-21 正式 `nethunter-22.2` promotion kernel（`a180aa33`）已完成 CI 和真机完整 Docker E2E，`Docker` 现在进入首版 devices feature；当前工作转为最终 MR staging / lint / installer 构建与提交材料收口。
 
 ## 官方要求（调研结论，2026-09-16）
 
@@ -37,7 +37,7 @@
 | RTL8188EUS/RTL8XXXU | in-tree rtl8xxxu 已 =y（Phase 5 kernel-side PASS） | config fragment |
 | Internal_BT | WCN3990 HCIUART 已 =y，raw HCI PASS | config fragment |
 | BT_RFCOMM | RFCOMM/BNEP 已 =y；2026-09-20 以 MIX Flip 为对端完成自动配对、RFCOMM 双向 payload/ACK，BNEP/PAN 亦完成真实链路与单向 ICMP 数据验证 | config fragment + Android 双机实测 |
-| Docker | Docker-test kernel + Docker 29.1.3/containerd 1.7.35 已完成完整真机 E2E：run/exec/mqueue/bind/cgroup/bridge/private-netns publish/cleanup、slirp 容器→宿主、slirp API Android/Mac→容器 hostfwd 全部 PASS；连接 Mac 热点后公网 IPv4 TCP、公共 DNS 与域名 HTTP 也分别得到 `CONTAINER_INTERNET_IPV4_PASS` / `CONTAINER_DNS_PASS` / `CONTAINER_DOMAIN_HTTP_PASS` / `CONTAINER_INTERNET_PASS`，且 Android 全局 Docker iptables 无污染 | 正式 `nethunter-22.2` commit `a180aa33` 已合入同一 IPC fix + Docker config + CI Kconfig 安全门禁；等待该正式 CI artifact 真机回归后再把 `Docker` 声明进 devices.yml |
+| Docker | ✅ 正式 `nethunter-22.2` / `a180aa33` CI artifact 已真机完整 E2E PASS：run/exec/mqueue/bind/cgroup/bridge/private-netns publish/cleanup、slirp 容器→宿主、slirp API Android/Mac→容器 hostfwd、公网 IPv4、公共 DNS、域名 HTTP 全部 PASS，Android 全局 Docker iptables 无污染 | `Docker` 已加入首版 devices feature；正式 Image SHA256=`8f1652062fa052fff6d1f3fc2ddf9d1f1b9ed5fbd4afeec5157210bef44fe3a7`，CI run `35544472143` |
 
 ## 移植阶段
 
@@ -62,14 +62,14 @@
 
 ### K3. devices 仓库条目 + ramdisk ✅（本地备好，2026-09-16）
 - 条目草稿：`kali/devices.yml.nx563j`（nx563j/nx563j-los；features 只标
-  真机已验证且符合当前官方 README 命名的 [BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]；外置网卡类待 OTG 硬件）
+  真机已验证且符合当前官方 README 命名的 [BT_RFCOMM, CDROM, Docker, HID-4, Injection, QCACLD, Internal_BT, NFS]；外置网卡类待 OTG 硬件）
 - ramdisk 备好：`kali/fifteen/nx563j-los/ramdisk/`（init.nethunter.rc
   改自 oneplus5-los——同 msm8998/4.4 平台 configfs g1 路径一致；
   HID 键盘/鼠标描述符用 r8q-oui 的标准 boot 描述符，oneplus5-los 里的
   是 0 字节占位）
 - boot 分区 by-name 路径已真机核实：/dev/block/bootdevice/by-name/boot
   → /dev/sde18（非 A/B 槽位设备，slot_device: 0）
-- `Image.gz-dtb` 已从 K2 CI 归档产物复制到 `kali/fifteen/nx563j-los/Image.gz-dtb`，sha256=`2038303df80404048427a24ea24b8f3b7909914dce8a38ba48cc8bc38d7986a4`；与已真机安装的 kernel ZIP 内核逐字节一致
+- 当前 `kali/fifteen/nx563j-los/Image.gz-dtb` 已升级为正式 `nethunter-22.2` / `a180aa33` GitHub Actions run `35544472143` 产物，sha256=`8f1652062fa052fff6d1f3fc2ddf9d1f1b9ed5fbd4afeec5157210bef44fe3a7`；该精确 artifact 已完成正式 kernel 真机回归与完整 Docker E2E。
 
 ### K4. 安装器 zip 构建 ✅ 2026-09-16
 - 用官方 kali-nethunter-installer build.py（用户已批准运行）+ 我们的
@@ -156,9 +156,9 @@ full chroot 全部真机运行。** 全部证据如下。
 ### K6. 上游提交 ⏳ 预提交完善中
 - GitLab MR 目标为当前官方 `kali-nethunter-kernels`：合并 `kali/devices.yml.nx563j` 到上游 `devices.yml`，并提交完整 `fifteen/nx563j-los/`（`Image.gz-dtb` + `ak_patches/01-nx563j-magisk-sar-ramdisk.sh` + ramdisk）
 - MR 候选树已完整；`kali/validate_submission.sh` 会校验 kernel SHA、已测试 ZIP 一致性、HID descriptors、ramdisk 功能内容、YAML 与公开 source branch
-- 2026-09-20 重新核对当前 GitLab upstream `main`：remote HEAD=`e5991aa941188697e56c526c1dbc9979afa2db28`，与本地 upstream metadata cache 一致。把最终候选（含 `BT_RFCOMM`）合并进完整 upstream `devices.yml` 后，官方 `.yamllint.yml` PASS；按 upstream Git tree 精确 materialize 目录骨架后运行官方 `bin/devices-integrity.py` PASS（`Kernels in directories: 271` / `Kernels in YAML kernels: 271`）。
-- 已用 2026-09-19 当前官方 `kali-nethunter-installer` main 对候选树重新执行 kernel-only `--installer` 构建。当前 devices feature 标签经 2026-09-20 真机补测、CDROM 主机实收与既有 NFS 真机验证更新为 `[BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS]`；feature 元数据不进入 kernel-only ZIP，因此当前 pre-MR 验证包仍为 `artifacts/kali/kernel-nethunter-20260919_205420-nx563j-los-fifteen-pre-mr.zip`，sha256=`4f9b33dc87ca3080d0c30f4ebbc2ee9f37154fa009998b5742950de3f1400c23`；该包中的 kernel、rc 与两个 HID descriptor 均与当前 MR 候选逐字节一致。此包目前属于 pre-MR 构建验证件，真机验证基线仍是 2026-09-16 包
-- 2026-09-19 校验：候选 `Image.gz-dtb` 与 CI 归档及已真机安装的 kernel ZIP 均为 sha256 `2038303d…`; source branch `nethunter-22.2` 当前头 `e840cb1b`，相对构建 commit `a5fee84d` 仅修改 `NETHUNTER.md`，无 kernel/config 变化
+- 2026-09-21 重新核对 GitLab upstream `main`：remote HEAD=`e5991aa941188697e56c526c1dbc9979afa2db28`。把最终候选（含 `Docker`）合并后，官方 `.yamllint.yml` PASS；按 upstream Git tree materialize 目录骨架后运行官方 `bin/devices-integrity.py` PASS（`Kernels in directories: 271` / `Kernels in YAML kernels: 271`）。
+- 2026-09-21 用当前官方 `kali-nethunter-installer` main `e63b0476` 对最终候选重新执行 kernel-only `--installer` 构建 PASS。最终 feature 为 `[BT_RFCOMM, CDROM, Docker, HID-4, Injection, QCACLD, Internal_BT, NFS]`；新包 `artifacts/kali/kernel-nethunter-20260921_0756-nx563j-los-fifteen-pre-mr-docker.zip`，sha256=`4b0de9214e84aa1b2bec5119bd6e9d3d69a315b0a4d66b4120461f1841d23f02`，其 kernel/HID descriptors/SAR patch 与候选逐字节一致，rc 仅存在空白规范化差异。
+- 最终候选 `Image.gz-dtb` 来自公开 source branch `nethunter-22.2` commit `a180aa33` 的正式 GitHub Actions run `35544472143`，sha256=`8f1652062fa052fff6d1f3fc2ddf9d1f1b9ed5fbd4afeec5157210bef44fe3a7`；该精确 artifact 已完成真机启动与完整 Docker E2E。
 - 预提交审计发现并修正 ramdisk 模板中的 3 个重复 USB trigger：Mac RESET / RESET+ADB 段误写成 `win,reset*`，现已改为 `mac,reset*`；validator 只允许这 3 个已审阅功能差异，其余可执行 rc 必须与真机测试 ZIP 一致
 - 2026-09-20 两个原阻塞项均完成真机闭环：运行中 boot 已确认加载候选 `overlay.d/init.nethunter.rc`，USB Arsenal 的 HID+ADB、RNDIS+ADB、`mac,reset`、`mac,reset,adb` 均在 Mac 主机实际枚举通过；蓝牙以 rooted Xiaomi MIX Flip 为第二对端完成自动 bond、RFCOMM 双向 payload/ACK，进一步完成 PAN/BNEP `STATE_CONNECTED`、双方 `bt-pan LOWER_UP`、镜像 TX/RX 计数及 MIX→NX 3/3 ICMP。临时 privileged 测试模块/APK 已从两台设备清理并重启回归，基础蓝牙仍为 ON。`BT_RFCOMM` 因此正式进入 devices feature 列表；BNEP 作为补充证据记录，不新增上游不存在的 feature 标签。
 - 2026-09-20 `CDROM` 也完成真机闭环：当前 configfs `mass_storage.0/lun.0` 写入 `cdrom=1`、`ro=1` 并挂载测试 ISO 后，macOS 实际枚举为 `File-CD Gadget`（VID/PID `0930:6545`，BSD `disk4`）；watchdog 随后自动恢复到 `mac,reset,adb`，ADB/设备状态正常。因此 `CDROM` 正式进入 devices feature 列表。

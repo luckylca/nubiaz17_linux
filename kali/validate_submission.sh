@@ -5,10 +5,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KALI="$ROOT/kali"
 CANDIDATE="$KALI/fifteen/nx563j-los"
 SAR_PATCH="$CANDIDATE/ak_patches/01-nx563j-magisk-sar-ramdisk.sh"
-ARTIFACT="$ROOT/artifacts/kali/nethunter-kernel-a5fee84d/Image.gz-dtb"
-KERNEL_ZIP="$ROOT/artifacts/kali/kernel-nethunter-20260916_115945-nx563j-los-fifteen.zip"
-PREMR_ZIP="$ROOT/artifacts/kali/kernel-nethunter-20260919-sar-premr-nx563j-los-fifteen.zip"
-EXPECTED_KERNEL_SHA="2038303df80404048427a24ea24b8f3b7909914dce8a38ba48cc8bc38d7986a4"
+ARTIFACT_DIR="$ROOT/artifacts/kali/nethunter-kernel-a180aa33"
+ARTIFACT="$ARTIFACT_DIR/Image.gz-dtb"
+ARTIFACT_CONFIG="$ARTIFACT_DIR/kernel.config"
+ARTIFACT_SOURCE="$ARTIFACT_DIR/KERNEL_SOURCE_COMMIT"
+BASELINE_KERNEL_ZIP="$ROOT/artifacts/kali/kernel-nethunter-20260916_115945-nx563j-los-fifteen.zip"
+PREMR_ZIP="$ROOT/artifacts/kali/kernel-nethunter-20260921_0756-nx563j-los-fifteen-pre-mr-docker.zip"
+EXPECTED_KERNEL_SHA="8f1652062fa052fff6d1f3fc2ddf9d1f1b9ed5fbd4afeec5157210bef44fe3a7"
+BASELINE_KERNEL_SHA="2038303df80404048427a24ea24b8f3b7909914dce8a38ba48cc8bc38d7986a4"
+FORMAL_SOURCE_COMMIT="a180aa33cd3d5603e4d1a89767940c2c94f01ec3"
 SOURCE_REPO="https://github.com/luckylca/android_kernel_nubia_msm8998_nethunter.git"
 SOURCE_BRANCH="nethunter-22.2"
 
@@ -29,7 +34,9 @@ for f in \
   "$CANDIDATE/ramdisk/mouse-descriptor.bin" \
   "$SAR_PATCH" \
   "$ARTIFACT" \
-  "$KERNEL_ZIP" \
+  "$ARTIFACT_CONFIG" \
+  "$ARTIFACT_SOURCE" \
+  "$BASELINE_KERNEL_ZIP" \
   "$PREMR_ZIP"; do
   [[ -f "$f" ]] || fail "missing: ${f#$ROOT/}"
 done
@@ -37,17 +44,30 @@ pass "candidate file set complete"
 
 kernel_sha="$(sha256_file "$CANDIDATE/Image.gz-dtb")"
 [[ "$kernel_sha" == "$EXPECTED_KERNEL_SHA" ]] || fail "candidate kernel sha256 mismatch: $kernel_sha"
-[[ "$(sha256_file "$ARTIFACT")" == "$EXPECTED_KERNEL_SHA" ]] || fail "archived kernel sha256 mismatch"
-pass "candidate Image.gz-dtb matches archived CI artifact ($kernel_sha)"
+[[ "$(sha256_file "$ARTIFACT")" == "$EXPECTED_KERNEL_SHA" ]] || fail "formal CI artifact sha256 mismatch"
+[[ "$(tr -d '\r\n' < "$ARTIFACT_SOURCE")" == "$FORMAL_SOURCE_COMMIT" ]] || fail "formal CI artifact source commit mismatch"
+pass "candidate Image.gz-dtb matches formal a180aa33 CI artifact ($kernel_sha)"
+
+for opt in \
+  CONFIG_PID_NS CONFIG_IPC_NS CONFIG_USER_NS CONFIG_POSIX_MQUEUE \
+  CONFIG_DEVPTS_MULTIPLE_INSTANCES CONFIG_CGROUP_DEVICE CONFIG_CGROUP_PIDS \
+  CONFIG_MEMCG_KMEM CONFIG_MEMCG_SWAP CONFIG_VETH CONFIG_BRIDGE_NETFILTER \
+  CONFIG_MACVLAN CONFIG_IPVLAN CONFIG_VXLAN CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
+  CONFIG_NF_NAT_IPV4 CONFIG_NF_CT_NETLINK; do
+  grep -qx "$opt=y" "$ARTIFACT_CONFIG" || fail "$opt missing from formal CI kernel config"
+done
+! grep -qx 'CONFIG_USB_DUMMY_HCD=y' "$ARTIFACT_CONFIG" || fail "unsafe CONFIG_USB_DUMMY_HCD enabled in formal CI artifact"
+pass "formal CI artifact contains validated Docker Kconfig set and keeps USB_DUMMY_HCD disabled"
 
 TMP="$(mktemp -d /tmp/nx563j-nh-validate.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
-unzip -qq "$KERNEL_ZIP" 'Image.gz-dtb' 'ramdisk-patch/*' -d "$TMP"
-[[ "$(sha256_file "$TMP/Image.gz-dtb")" == "$EXPECTED_KERNEL_SHA" ]] || fail "kernel ZIP embeds a different Image.gz-dtb"
+mkdir -p "$TMP/baseline"
+unzip -qq "$BASELINE_KERNEL_ZIP" 'Image.gz-dtb' 'ramdisk-patch/*' -d "$TMP/baseline"
+[[ "$(sha256_file "$TMP/baseline/Image.gz-dtb")" == "$BASELINE_KERNEL_SHA" ]] || fail "2026-09-16 hardware baseline kernel hash changed"
 for f in keyboard-descriptor.bin mouse-descriptor.bin; do
-  [[ "$(sha256_file "$TMP/ramdisk-patch/$f")" == "$(sha256_file "$CANDIDATE/ramdisk/$f")" ]] || fail "$f differs from tested kernel ZIP"
+  [[ "$(sha256_file "$TMP/baseline/ramdisk-patch/$f")" == "$(sha256_file "$CANDIDATE/ramdisk/$f")" ]] || fail "$f differs from hardware-tested baseline ZIP"
 done
-pass "kernel ZIP and MR candidate use identical kernel + HID descriptors"
+pass "hardware-tested baseline ZIP still anchors HID descriptors; formal kernel provenance is checked separately"
 
 # init.nethunter.rc is based on the hardware-tested ZIP, with two reviewed
 # functional corrections: (1) NX563J creates USB configfs/g1 too late for the
@@ -55,7 +75,7 @@ pass "kernel ZIP and MR candidate use identical kernel + HID descriptors"
 # sys.boot_completed=1; (2) the Mac reset/reset+adb property triggers were
 # incorrectly duplicated as win,* triggers. Build the expected executable rc
 # from the tested one by applying exactly those corrections.
-python3 - "$TMP/ramdisk-patch/init.nethunter.rc" "$TMP/expected.rc" <<'PY'
+python3 - "$TMP/baseline/ramdisk-patch/init.nethunter.rc" "$TMP/expected.rc" <<'PY'
 from pathlib import Path
 import sys
 
@@ -158,7 +178,7 @@ unzip -qq "$PREMR_ZIP" \
   'ramdisk-patch/mouse-descriptor.bin' \
   'ak_patches/01-nx563j-magisk-sar-ramdisk.sh' \
   -d "$PRE"
-cmp -s "$PRE/Image.gz-dtb" "$CANDIDATE/Image.gz-dtb" || fail "pre-MR ZIP kernel differs from candidate"
+cmp -s "$PRE/Image.gz-dtb" "$CANDIDATE/Image.gz-dtb" || fail "current pre-MR ZIP kernel differs from formal candidate"
 python3 - "$PRE/ramdisk-patch/init.nethunter.rc" "$CANDIDATE/ramdisk/init.nethunter.rc" <<'PY'
 from pathlib import Path
 import sys
@@ -175,7 +195,7 @@ PY
 cmp -s "$PRE/ramdisk-patch/keyboard-descriptor.bin" "$CANDIDATE/ramdisk/keyboard-descriptor.bin" || fail "pre-MR ZIP keyboard descriptor differs"
 cmp -s "$PRE/ramdisk-patch/mouse-descriptor.bin" "$CANDIDATE/ramdisk/mouse-descriptor.bin" || fail "pre-MR ZIP mouse descriptor differs"
 cmp -s "$PRE/ak_patches/01-nx563j-magisk-sar-ramdisk.sh" "$SAR_PATCH" || fail "pre-MR ZIP SAR patch differs from candidate"
-pass "current SAR pre-MR ZIP matches candidate kernel/descriptors/SAR patch; rc differs only by whitespace normalization"
+pass "current Docker pre-MR ZIP matches formal candidate kernel/descriptors/SAR patch; rc differs only by whitespace normalization"
 
 if command -v ruby >/dev/null 2>&1; then
   ruby -e 'require "yaml"; x=YAML.load_file(ARGV[0]); abort("expected one top-level list item") unless x.is_a?(Array) && x.length==1' "$KALI/devices.yml.nx563j"
@@ -188,7 +208,7 @@ grep -q '^ *- nx563j:' "$KALI/devices.yml.nx563j" || fail "nx563j device entry m
 grep -q 'id *: nx563j-los' "$KALI/devices.yml.nx563j" || fail "nx563j-los id missing"
 grep -q 'android: fifteen' "$KALI/devices.yml.nx563j" || fail "Android fifteen entry missing"
 grep -q 'linux *: 4\.04' "$KALI/devices.yml.nx563j" || fail "Linux 4.04 entry missing"
-grep -q 'features *: \[BT_RFCOMM, CDROM, HID-4, Injection, QCACLD, Internal_BT, NFS\]' "$KALI/devices.yml.nx563j" || fail "reviewed feature list changed"
+grep -q 'features *: \[BT_RFCOMM, CDROM, Docker, HID-4, Injection, QCACLD, Internal_BT, NFS\]' "$KALI/devices.yml.nx563j" || fail "reviewed feature list changed"
 pass "device metadata contains reviewed Android/kernel/features values"
 
 if [[ "${SKIP_REMOTE:-0}" != "1" ]]; then
