@@ -66,6 +66,8 @@ A single focused upstream commit was created in the fresh staging clone using th
 - changed paths: exactly six (the `devices.yml` edit plus the five `fifteen/nx563j-los` files listed above)
 - `Signed-off-by` uses the same GitLab private noreply identity; the user's real mailbox is not present in the commit
 
-The branch `nx563j-los` has been pushed to the fork and verified byte-for-byte by commit ID: local and remote both resolve to `e9c5e673e6c4bd7905bfc05bfbc465723e9af8b8`. GitLab's repository compare API reports exactly one commit and six diffs. No fork pipeline exists yet, which is expected before an MR triggers the upstream/fork CI workflow.
+The branch `nx563j-los` has been pushed to the fork and verified byte-for-byte by commit ID: local and remote both resolve to `e9c5e673e6c4bd7905bfc05bfbc465723e9af8b8`. GitLab's repository compare API reports exactly one commit and six diffs.
 
-The technical submission branch is therefore ready. Opening the official Kali merge request remains an explicit user action/decision; use `kali/MR_BODY.md` as the prepared description when that action is authorized.
+The official Kali merge request was opened on 2026-09-22 as `kalilinux/nethunter/build-scripts/kali-nethunter-kernels!465` with title `Add Nubia Z17 (nx563j) LineageOS 22.2 / Android 15 support`. GitLab reports the MR as `opened`, non-draft, and `mergeable` / `can_be_merged`, targeting upstream `main` from fork branch `luckyyyyyy:kali-nethunter-kernels/nx563j-los` at commit `e9c5e673e6c4bd7905bfc05bfbc465723e9af8b8`.
+
+The MR-triggered GitLab pipeline `2869953778` completed successfully. Both required lint jobs passed: `yamllint=success` and `devices_integrity=success`. The submission is now awaiting Kali maintainer review/merge rather than any further technical preparation.
