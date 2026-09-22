@@ -50,7 +50,7 @@ Validation results:
 - public kernel source branch reachability: PASS
 - current installer main is unchanged from the already successful kernel-only build at `e63b0476...`
 
-A read-only phone check on 2026-09-22 also confirmed the connected NX563J is booted, Magisk root works, Docker-critical runtime Kconfig options remain enabled, and `CONFIG_USB_DUMMY_HCD` remains disabled. No destructive phone operation was performed during this refresh.
+A read-only phone check on 2026-09-22 also confirmed the connected NX563J is booted, Magisk root works, Docker-critical runtime Kconfig options remain enabled, and `CONFIG_USB_DUMMY_HCD` remains disabled. The first 16,717,096 bytes of the live boot partition match `work/formal-docker-a180aa33/boot-nethunter-formal-a180aa33.img` byte-for-byte by SHA256 (`dce6db0c276440f338122d8e5019e6b3a5c42dff99aea6c99da34ae9efbd9970`), proving the phone is still running the exact formal promotion boot used for validation. The full 64 MiB partition hash is not expected to equal the smaller image-file hash because bytes beyond the image length are outside that comparison. No destructive phone operation was performed during this refresh.
 
 ## Submission identity blocker
 
