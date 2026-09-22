@@ -56,17 +56,16 @@ A read-only phone check on 2026-09-22 also confirmed the connected NX563J is boo
 
 GitLab SSH authentication is now working for account `@luckyyyyyy` (public profile name `CHENGAN LU`). The local `~/.ssh/id_ed25519` public key is registered with GitLab. Because this network closes GitLab SSH port 22, `~/.ssh/config` routes only `gitlab.com` through GitLab's official `altssh.gitlab.com:443` endpoint; the scanned ED25519 host key was verified against GitLab's published fingerprint before it was added to `known_hosts`.
 
-The account currently has no GitLab projects and therefore no fork of `kalilinux/nethunter/build-scripts/kali-nethunter-kernels`. Creating that fork is the remaining GitLab-side prerequisite before the branch can be pushed.
+The fork now exists as `luckyyyyyy/kali-nethunter-kernels` (GitLab project ID `86737021`) and correctly reports `kalilinux/nethunter/build-scripts/kali-nethunter-kernels` as its parent. Its `main` branch matches upstream exactly at `e5991aa941188697e56c526c1dbc9979afa2db28`.
 
-No commit email has been selected yet. The SSH public-key comment must not be treated as consent to publish that email permanently in upstream Git history. Prefer the GitLab private commit email if privacy is desired.
+A single focused upstream commit was created in the fresh staging clone using the GitLab private noreply identity `CHENGAN LU <42606990-luckyyyyyy@users.noreply.gitlab.com>` and `git commit -s`:
 
-After the fork exists and a public/private commit email is selected, configure only the staging clone and create one focused signed-off commit, for example:
+- commit: `e9c5e673e6c4bd7905bfc05bfbc465723e9af8b8`
+- title: `Add Nubia Z17 LineageOS 22.2 support`
+- delta from upstream `main`: exactly one commit
+- changed paths: exactly six (the `devices.yml` edit plus the five `fifteen/nx563j-los` files listed above)
+- `Signed-off-by` uses the same GitLab private noreply identity; the user's real mailbox is not present in the commit
 
-```bash
-git config user.name '<public author name>'
-git config user.email '<public commit email>'
-git add devices.yml fifteen/nx563j-los
-git commit -s -m 'Add Nubia Z17 LineageOS 22.2 support'
-```
+The branch `nx563j-los` has been pushed to the fork and verified byte-for-byte by commit ID: local and remote both resolve to `e9c5e673e6c4bd7905bfc05bfbc465723e9af8b8`. GitLab's repository compare API reports exactly one commit and six diffs. No fork pipeline exists yet, which is expected before an MR triggers the upstream/fork CI workflow.
 
-After that, push the single branch to the user's GitLab fork and open the merge request using `kali/MR_BODY.md` as the prepared description. Opening the official Kali MR remains an explicit user action/decision.
+The technical submission branch is therefore ready. Opening the official Kali merge request remains an explicit user action/decision; use `kali/MR_BODY.md` as the prepared description when that action is authorized.
