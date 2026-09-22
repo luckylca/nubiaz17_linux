@@ -52,11 +52,15 @@ Validation results:
 
 A read-only phone check on 2026-09-22 also confirmed the connected NX563J is booted, Magisk root works, Docker-critical runtime Kconfig options remain enabled, and `CONFIG_USB_DUMMY_HCD` remains disabled. The first 16,717,096 bytes of the live boot partition match `work/formal-docker-a180aa33/boot-nethunter-formal-a180aa33.img` byte-for-byte by SHA256 (`dce6db0c276440f338122d8e5019e6b3a5c42dff99aea6c99da34ae9efbd9970`), proving the phone is still running the exact formal promotion boot used for validation. The full 64 MiB partition hash is not expected to equal the smaller image-file hash because bytes beyond the image length are outside that comparison. No destructive phone operation was performed during this refresh.
 
-## Submission identity blocker
+## GitLab submission identity
 
-Technical submission data is complete. This Mac currently has no global Git author name/email, no authenticated `glab`, and no working GitLab SSH identity. Do not invent an author identity or expose a private email.
+GitLab SSH authentication is now working for account `@luckyyyyyy` (public profile name `CHENGAN LU`). The local `~/.ssh/id_ed25519` public key is registered with GitLab. Because this network closes GitLab SSH port 22, `~/.ssh/config` routes only `gitlab.com` through GitLab's official `altssh.gitlab.com:443` endpoint; the scanned ED25519 host key was verified against GitLab's published fingerprint before it was added to `known_hosts`.
 
-Before creating the upstream commit, choose the public author identity to be permanently recorded in Git history, preferably a GitLab noreply address if privacy is desired. Then configure the staging clone locally and create one focused signed-off commit, for example:
+The account currently has no GitLab projects and therefore no fork of `kalilinux/nethunter/build-scripts/kali-nethunter-kernels`. Creating that fork is the remaining GitLab-side prerequisite before the branch can be pushed.
+
+No commit email has been selected yet. The SSH public-key comment must not be treated as consent to publish that email permanently in upstream Git history. Prefer the GitLab private commit email if privacy is desired.
+
+After the fork exists and a public/private commit email is selected, configure only the staging clone and create one focused signed-off commit, for example:
 
 ```bash
 git config user.name '<public author name>'
