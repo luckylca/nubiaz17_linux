@@ -71,3 +71,11 @@ The branch `nx563j-los` has been pushed to the fork and verified byte-for-byte b
 The official Kali merge request was opened on 2026-09-22 as `kalilinux/nethunter/build-scripts/kali-nethunter-kernels!465` with title `Add Nubia Z17 (nx563j) LineageOS 22.2 / Android 15 support`. GitLab reports the MR as `opened`, non-draft, and `mergeable` / `can_be_merged`, targeting upstream `main` from fork branch `luckyyyyyy:kali-nethunter-kernels/nx563j-los` at commit `e9c5e673e6c4bd7905bfc05bfbc465723e9af8b8`.
 
 The MR-triggered GitLab pipeline `2869953778` completed successfully. Both required lint jobs passed: `yamllint=success` and `devices_integrity=success`. The submission is now awaiting Kali maintainer review/merge rather than any further technical preparation.
+
+## Separate installer BusyBox fix
+
+The Magisk/Android 15 BusyBox symlink issue was confirmed to still exist on `kali-nethunter-installer` main `e63b0476a7fd5767729208c68a78ad79afaaf556`. The affected paths were `nethunter/post-fs-data.sh` and `common/tools/install-busybox.sh`, which created absolute links back into the module path under `/data/adb/modules`.
+
+A focused signed-off commit, `882dd27dc2625c451fff0707e223af5315644860` (`busybox: use relative module symlinks`), changes those aliases to relative links. This matches both the existing KernelSU handling in `customize.sh` and the repaired NX563J module backup (`busybox_nh -> busybox_nh-1.38.0`, `busybox -> busybox_nh`). Shell syntax, `git diff --check`, and an inaccessible-parent permission regression all pass.
+
+The fix was submitted as `kalilinux/nethunter/build-scripts/kali-nethunter-installer!45` with title `Fix BusyBox symlinks for module overlays`. GitLab reports it as `opened` and `can_be_merged`, targeting `main` from `luckyyyyyy/kali-nethunter-installer:fix-relative-busybox-symlinks`.

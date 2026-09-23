@@ -78,4 +78,4 @@ Internal WCN3990 injection is verified on 5 GHz. A 2.4 GHz path can trigger a Qu
 
 ## Separate upstream issue
 
-The Android 15 + Magisk NetHunter module busybox problem is an installer/module issue, not a kernel-device MR requirement. The verified local fix changes `busybox_nh` to a relative symlink and makes `post-fs-data.sh` recreate it that way. Report that separately so it does not mix unrelated installer changes into the NX563J kernel MR.
+The Android 15 + Magisk NetHunter module BusyBox problem was kept out of the NX563J kernel MR and submitted separately to `kali-nethunter-installer` as MR `!45` (`Fix BusyBox symlinks for module overlays`). The fix changes the module's `busybox_nh` and `busybox` aliases to relative symlinks in both `nethunter/post-fs-data.sh` and `common/tools/install-busybox.sh`. This matches the relative-link handling already used by the KernelSU path in `customize.sh` and the layout verified on the NX563J.
